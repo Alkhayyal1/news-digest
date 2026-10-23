@@ -7,7 +7,7 @@ import { SECTIONS } from '../core/lexicon.js';
 import { indexText, normalizeArabic } from '../core/arabic.js';
 import { getBulletin } from '../bulletin.js';
 import { J } from '../db.js';
-import { status, publicSources, eventDetail, companiesList, companyDetail, latestBulletin, bulletinList, adminOverview } from '../views.js';
+import { status, publicSources, eventDetail, latestBulletin, bulletinList, adminOverview } from '../views.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PUBLIC_FILES = ['index.html', 'admin.html', 'styles.css', 'app.js', 'admin.js', 'common.js', 'theme.js', 'favicon.svg', 'static-search.js'];
@@ -46,13 +46,8 @@ export function buildSite(db, outDir, { now = Date.now() } = {}) {
   out('data/status.json', { ...status(db, now), static: true, builtAt: now, actionsUrl: repo ? `${server}/${repo}/actions/workflows/update.yml` : null, repoUrl: repo ? `${server}/${repo}` : null });
   out('data/sections.json', SECTIONS);
   out('data/sources.json', publicSources(db).map(({ key, name, enabled, is_official, health }) => ({ key, name, enabled, is_official, health })));
-  out('data/companies.json', companiesList(db));
-  for (const c of db.prepare('SELECT symbol FROM companies').all()) {
-    out(`data/companies/${c.symbol}.json`, companyDetail(db, c.symbol));
-    count();
-  }
   out('data/admin.json', { ...adminOverview(db), configLog: J(db.prepare("SELECT value FROM settings WHERE key = 'config_log'").get()?.value) });
-  stats.files += 6;
+  stats.files += 4;
 
   // ---- bulletins ----
   out('data/bulletins/latest.json', latestBulletin(db));
@@ -92,7 +87,6 @@ export function buildSite(db, outDir, { now = Date.now() } = {}) {
       se: e.section,
       ty: e.content_type,
       src: keys,
-      co: en.filter((x) => x.symbol).map((x) => x.symbol),
       o: e.occurred_at,
       f: e.first_seen_at,
       u: e.last_update_at,
