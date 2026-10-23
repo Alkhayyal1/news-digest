@@ -6,7 +6,7 @@ const READ_ONLY = STATIC;
 
 const app = document.getElementById('app');
 const tabsEl = document.getElementById('tabs');
-const TABS = [['runs', 'التشغيل والجدولة'], ['sources', 'المصادر'], ['logs', 'أخطاء الجلب'], ['dedup', 'مراجعة التكرار'], ['excluded', 'المستبعد'], ['finance', 'بيانات الشركات']];
+const TABS = [['runs', 'التشغيل والجدولة'], ['sources', 'المصادر'], ['logs', 'أخطاء الجلب'], ['dedup', 'مراجعة التكرار'], ['excluded', 'المستبعد']];
 let tab = 'runs';
 let data = null;
 
@@ -42,7 +42,7 @@ function render() {
   tabsEl.innerHTML = TABS.map(([k, n]) => `<a href="#" data-tab="${k}" class="${k === tab ? 'active' : ''}">${n}</a>`).join('') + (READ_ONLY ? '' : '<a href="#" id="logout">خروج</a>');
   tabsEl.querySelectorAll('[data-tab]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); tab = a.dataset.tab; render(); }));
   document.getElementById('logout')?.addEventListener('click', async (e) => { e.preventDefault(); await api('/api/admin/logout', { method: 'POST' }); load(); });
-  const v = { runs, sources, logs, dedup, excluded, finance }[tab]();
+  const v = { runs, sources, logs, dedup, excluded }[tab]();
   app.innerHTML = (READ_ONLY ? staticBanner() : '') + v;
   wire();
 }
@@ -131,29 +131,6 @@ function excluded() {
     </tbody></table></div>`;
 }
 
-function finance() {
-  if (READ_ONLY) return `<h1 class="page">بيانات الشركات</h1><div class="notice info">أضف القوائم المالية والأسعار في الملف config/financials.json داخل المستودع، كل رقم مع رابط الإفصاح الأصلي. تُستورد في التشغيل التالي، والمبالغ بالمليون ريال.</div>
-    <pre class="ltr">${esc(JSON.stringify({ reports: [{ symbol: '2222', period: '2026-Q2', period_end: '2026-06-30', disclosed_at: '2026-08-05', revenue: null, net_profit: null, non_recurring: null, shares_outstanding: null, source_url: 'https://...' }], prices: [{ symbol: '2222', price: null, as_of: '2026-10-20', source_url: 'https://...', note: 'سعر إغلاق' }] }, null, 2))}</pre>`;
-  const f = (n, l) => `<label class="f">${l}<input name="${n}" inputmode="decimal" dir="ltr"></label>`;
-  return `<h1 class="page">إدخال بيانات مالية من إفصاح أصلي</h1>
-    <div class="notice info">أدخل الأرقام كما وردت في القوائم المالية الأصلية، بالمليون ريال (وعدد الأسهم بالمليون). رابط الإفصاح إلزامي. اترك الحقل فارغًا إن لم يرد في الإفصاح — لا تقدّر.</div>
-    <form class="search" id="finform">
-      <label class="f">رمز الشركة<input name="symbol" dir="ltr" required placeholder="2222"></label>
-      <label class="f">الفترة<input name="period" dir="ltr" required placeholder="2026-Q2"></label>
-      <label class="f">نهاية الفترة<input name="period_end" type="date"></label>
-      <label class="f">تاريخ الإفصاح<input name="disclosed_at" type="date"></label>
-      ${f('revenue', 'الإيرادات')}${f('gross_profit', 'إجمالي الربح')}${f('operating_profit', 'الربح التشغيلي')}${f('net_profit', 'صافي الربح')}${f('non_recurring', 'بنود غير متكررة (ضمن صافي الربح)')}
-      ${f('total_debt', 'إجمالي الديون')}${f('cash', 'النقد وما يعادله')}${f('equity', 'حقوق الملكية')}${f('operating_cash_flow', 'التدفق النقدي التشغيلي')}${f('capex', 'الإنفاق الرأسمالي')}
-      ${f('dps', 'التوزيع للسهم (ريال)')}${f('shares_outstanding', 'عدد الأسهم (مليون)')}
-      <label class="f q">رابط الإفصاح الأصلي<input name="source_url" dir="ltr" required></label>
-      <label class="f q">ملاحظات<input name="notes"></label>
-      <button class="btn">حفظ الفترة</button></form>
-    <h2>سعر سهم بتاريخ محدد</h2>
-    <form class="search" id="priceform"><label class="f">الرمز<input name="symbol" dir="ltr" required></label><label class="f">السعر (ريال)<input name="price" dir="ltr" required></label>
-      <label class="f">التاريخ<input name="as_of" type="date" required></label><label class="f q">رابط المصدر<input name="source_url" dir="ltr" required></label>
-      <label class="f q">ملاحظة<input name="note" placeholder="سعر إغلاق"></label><button class="btn">حفظ السعر</button></form>`;
-}
-
 async function act(fn) {
   try {
     await fn();
@@ -179,8 +156,6 @@ function wire() {
   app.querySelectorAll('[data-merge-into]').forEach((b) => b.addEventListener('click', () => act(() => api('/api/admin/merge', { method: 'POST', body: JSON.stringify({ intoId: +b.dataset.mergeInto, fromId: +b.dataset.mergeFrom }) }))));
   app.querySelectorAll('[data-dismiss]').forEach((b) => b.addEventListener('click', () => act(() => api(`/api/admin/reviews/${b.dataset.dismiss}/dismiss`, { method: 'POST' }))));
   app.querySelector('#manualmerge')?.addEventListener('submit', (e) => { e.preventDefault(); act(() => api('/api/admin/merge', { method: 'POST', body: JSON.stringify(formJson(e.target)) })); });
-  app.querySelector('#finform')?.addEventListener('submit', (e) => { e.preventDefault(); act(() => api('/api/admin/financials', { method: 'POST', body: JSON.stringify(formJson(e.target)) })); });
-  app.querySelector('#priceform')?.addEventListener('submit', (e) => { e.preventDefault(); act(() => api('/api/admin/prices', { method: 'POST', body: JSON.stringify(formJson(e.target)) })); });
 }
 
 load().catch((e) => (app.innerHTML = `<div class="notice danger">${esc(e.message)}</div>`));

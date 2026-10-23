@@ -43,7 +43,7 @@ export async function searchStatic(f) {
     (!f.from || (e.o ?? e.f) >= +f.from) && (!f.to || (e.o ?? e.f) <= +f.to)
     && (!f.scope || e.sc === f.scope) && (!f.section || e.se === f.section)
     && (!f.type || (f.type === 'update' ? e.uc > 0 : e.ty === f.type))
-    && (!f.source || e.src.includes(f.source)) && (!f.company || e.co.includes(f.company)));
+    && (!f.source || e.src.includes(f.source)));
   const q = String(f.q || '').trim();
   let scored = rows.map((e) => ({ e, score: 0 }));
   if (q) {

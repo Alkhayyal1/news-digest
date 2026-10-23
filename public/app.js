@@ -97,7 +97,6 @@ function card(s, { highlight = null, kind = 'new', laterUpdates = 0 } = {}) {
   const others = (s.sources || []).slice(1);
   const lastUpdate = (s.updates || []).slice(-1)[0];
   const ver = NOTABLE_VERIFY[s.verification];
-  const companies = (s.entities || []).filter((e) => e.kind === 'company');
   const tags = (s.tags || []).filter((t) => !(s.entities || []).some((e) => e.label === t)).slice(0, 4);
   return `<article class="card" id="ev-${s.id}" data-sec="${esc(s.section)}">
     <div class="top">
@@ -115,7 +114,7 @@ function card(s, { highlight = null, kind = 'new', laterUpdates = 0 } = {}) {
     ${s.facts?.length ? `<ul class="facts">${s.facts.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
     ${s.why ? `<div class="why"><b>لماذا يهم؟</b> ${esc(s.why)} <span class="sub">(تقدير تحريري)</span></div>` : ''}
     ${s.section === 'w_science' ? `<div class="science">${s.research_note ? '' : 'لم يحدد المصدر طبيعة البحث. '}النتائج البحثية ليست توصيات علاجية.</div>` : ''}
-    ${companies.length || tags.length ? `<div class="chips">${companies.map((e) => `<a class="chip" href="#/company/${esc(e.symbol)}">${esc(e.label)} · ${esc(e.symbol)}</a>`).join('')}${tags.map((t) => `<a class="chip" href="#/search?q=${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
+    ${tags.length ? `<div class="chips">${tags.map((t) => `<a class="chip" href="#/search?q=${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
     ${others.length ? `<details class="more"><summary>${others.length === 1 ? 'مصدر آخر غطّى الخبر' : `${others.length} مصادر أخرى غطّت الخبر`}</summary><ul>${others.map((o) => `<li><a href="${esc(o.url)}" target="_blank" rel="noopener noreferrer nofollow">${esc(o.source)}</a> — <span dir="auto">${esc(o.title)}</span> <span class="sub">(${esc(fmtS(o.published_at))})</span></li>`).join('')}</ul></details>` : ''}
     <div class="foot">
       <span class="times"><span>نشر المصدر: ${p.published_at ? esc(fmtS(p.published_at)) : 'غير محدد'}</span><span>أُضيف: ${esc(fmtS(s.first_seen_at))}</span>${s.updates?.length ? `<span>آخر تطور: ${esc(fmtS(s.last_update_at))}</span>` : ''}</span>
@@ -131,8 +130,11 @@ const cardOf = (it) => card(it.snapshot, { highlight: it.highlight, kind: it.kin
 function renderBulletinBody(b) {
   const bySection = new Map();
   for (const it of b.items) {
-    if (!bySection.has(it.section)) bySection.set(it.section, []);
-    bySection.get(it.section).push(it);
+    // sections removed from the product (e.g. stocks) fall back to the economy section of their scope
+    const sec = SECTIONS.some((s) => s.key === it.section) ? it.section : it.section.startsWith('sa_') ? 'sa_economy' : 'w_economy';
+    it.section = sec;
+    if (!bySection.has(sec)) bySection.set(sec, []);
+    bySection.get(sec).push(it);
   }
   const hl = b.items.filter((x) => x.highlight);
   let html = '';
@@ -161,8 +163,7 @@ function renderBulletinBody(b) {
         content += `<span id="sec-${s.key}"></span>`;
         continue;
       }
-      const hint = s.key === 'sa_market' || s.key === 'w_economy' ? 'الأرقام والأسعار في الأخبار تخص وقت نشر المصدر وليست لحظية، ولا تُنسب أسباب لحركة الأسواق إلا إذا ذكرها المصدر.'
-        : s.key === 'sa_companies' ? 'للتحليل المالي المبني على الإفصاحات راجع صفحة شركات تداول.' : '';
+      const hint = s.key === 'sa_economy' || s.key === 'w_economy' ? 'الأرقام والأسعار في الأخبار تخص وقت نشر المصدر وليست لحظية، ولا تُنسب أسباب لحركة الأسواق إلا إذا ذكرها المصدر.' : '';
       content += `<section class="section" id="sec-${s.key}" data-sec="${s.key}">
         <div class="section-head"><h3>${esc(s.name)}</h3><span class="n">${items.length}</span></div>
         ${hint ? `<div class="hint">${esc(hint)}</div>` : ''}
@@ -264,16 +265,15 @@ async function pageEvent(id) {
 
 async function pageSearch(params) {
   setNav('search');
-  const [sources, companies] = await Promise.all([api('/api/sources'), api('/api/companies')]);
+  const sources = await api('/api/sources');
   const v = (k) => esc(params.get(k) || '');
   const dateVal = (k) => (params.get(k) ? new Date(+params.get(k) + 3 * 3600_000).toISOString().slice(0, 10) : '');
   app.innerHTML = `<h1 class="page">البحث في الأرشيف</h1>
     <form class="search" id="sf">
-      <input class="q" name="q" placeholder="ابحث في العناوين والملخصات والشركات والرموز والجهات والوسوم" value="${v('q')}">
+      <input class="q" name="q" placeholder="ابحث في العناوين والملخصات والجهات والوسوم" value="${v('q')}">
       <label class="f">النطاق<select name="scope"><option value="">الكل</option><option value="saudi">السعودية</option><option value="world">العالم</option></select></label>
       <label class="f">القسم<select name="section"><option value="">الكل</option>${SECTIONS.map((s) => `<option value="${s.key}">${esc(s.name)}</option>`).join('')}</select></label>
       <label class="f">المصدر<select name="source"><option value="">الكل</option>${sources.map((s) => `<option value="${esc(s.key)}">${esc(s.name)}</option>`).join('')}</select></label>
-      <label class="f">الشركة<select name="company"><option value="">الكل</option>${companies.map((c) => `<option value="${esc(c.symbol)}">${esc(c.name)} (${esc(c.symbol)})</option>`).join('')}</select></label>
       <label class="f">نوع المحتوى<select name="type"><option value="">الكل</option><option value="news">خبر</option><option value="analysis">تحليل</option><option value="statement">تصريح</option><option value="update">له تحديثات جوهرية</option></select></label>
       <label class="f">من تاريخ<input type="date" name="from" value="${dateVal('from')}"></label>
       <label class="f">إلى تاريخ<input type="date" name="to" value="${dateVal('to')}"></label>
@@ -282,7 +282,7 @@ async function pageSearch(params) {
     </form>
     <div id="results"></div>`;
   const form = document.getElementById('sf');
-  for (const k of ['scope', 'section', 'source', 'company', 'type', 'sort']) if (params.get(k)) form.elements[k].value = params.get(k);
+  for (const k of ['scope', 'section', 'source', 'type', 'sort']) if (params.get(k)) form.elements[k].value = params.get(k);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const p = new URLSearchParams();
@@ -306,46 +306,6 @@ async function pageSearch(params) {
       <span class="badge">${r.source_count} مصدر</span>${r.update_count ? `<span class="badge type-update">${r.update_count} تحديث</span>` : ''}</div></div>
       <div class="sub">وقع: ${esc(fmtS(r.occurred_at))}<br>أُضيف: ${esc(fmtS(r.first_seen_at))}</div></div>`).join('')}
     ${pager(d.page, d.pages, (pg) => { const p = new URLSearchParams(params); p.set('page', pg); return '#/search?' + p.toString(); })}`;
-}
-
-const fmtNum = (x, d = 1) => (x === null || x === undefined ? '—' : Number(x).toLocaleString('ar-SA-u-nu-latn', { maximumFractionDigits: d }));
-
-async function pageCompanies() {
-  setNav('companies');
-  const list = await api('/api/companies');
-  app.innerHTML = `<h1 class="page">تحليل شركات تداول</h1>
-    <div class="notice info">التحليل يعتمد فقط على أرقام مُدخلة من الإفصاحات والقوائم المالية الأصلية مع رابط كل إفصاح. لا تُعرض أرقام غير مُسندة، ولا توجد توصيات شراء أو بيع.
-    الشركات التي لا تملك بيانات مُدخلة تعرض الأخبار المرتبطة فقط.</div>
-    <div class="table-wrap"><table class="data"><thead><tr><th>الرمز</th><th>الشركة</th><th>القطاع</th><th>فترات مالية مُدخلة</th><th>أخبار مرتبطة</th></tr></thead>
-    <tbody>${list.map((c) => `<tr><td>${esc(c.symbol)}</td><td><a href="#/company/${esc(c.symbol)}">${esc(c.name)}</a></td><td>${esc(c.sector)}</td><td>${c.reports}</td><td>${c.events}</td></tr>`).join('')}</tbody></table></div>`;
-}
-
-async function pageCompany(symbol) {
-  setNav('companies');
-  const d = await api(`/api/companies/${encodeURIComponent(symbol)}`);
-  const a = d.analysis;
-  const m = a.metrics || {};
-  const L = a.latest;
-  const metric = (k, v, suffix = '') => `<div class="metric"><div class="k">${k}</div><div class="v">${v === null || v === undefined ? '—' : esc(fmtNum(v)) + suffix}</div></div>`;
-  app.innerHTML = `<h1 class="page">${esc(d.company.name)} <span class="sub">(${esc(d.company.symbol)}) — ${esc(d.company.sector)}</span></h1>
-    ${L ? `<div class="sub">آخر فترة: <b>${esc(L.period)}</b>${L.period_end ? ` (تنتهي ${esc(L.period_end)})` : ''} — تاريخ الإفصاح: ${esc(L.disclosed_at || 'غير مُدخل')} — <a href="${esc(L.source_url)}" target="_blank" rel="noopener noreferrer">الإفصاح الأصلي</a>. المبالغ بالمليون ريال.</div>
-    <h2>الأداء</h2><div class="grid2">
-      ${metric('الإيرادات', L.revenue)}${metric('الربح التشغيلي', L.operating_profit)}${metric('صافي الربح', L.net_profit)}${metric('بنود غير متكررة', L.non_recurring)}${metric('صافي الربح المتكرر (محسوب)', m.recurring_net_profit)}
-      ${metric('نمو الإيرادات سنويًا', m.revenue_yoy_pct, '٪')}${metric('نمو صافي الربح سنويًا', m.net_profit_yoy_pct, '٪')}${metric('نمو الإيرادات عن الربع السابق', m.revenue_qoq_pct, '٪')}${metric('نمو صافي الربح عن الربع السابق', m.net_profit_qoq_pct, '٪')}
-      ${metric('هامش إجمالي', m.gross_margin_pct, '٪')}${metric('هامش تشغيلي', m.operating_margin_pct, '٪')}${metric('هامش صافٍ', m.net_margin_pct, '٪')}
-    </div><h2>المركز المالي والتدفقات</h2><div class="grid2">
-      ${metric('إجمالي الديون', L.total_debt)}${metric('النقد', L.cash)}${metric('صافي الدين (محسوب)', m.net_debt)}${metric('الدين إلى حقوق الملكية', m.debt_to_equity)}
-      ${metric('التدفق النقدي التشغيلي', L.operating_cash_flow)}${metric('الإنفاق الرأسمالي', L.capex)}${metric('التدفق النقدي الحر (محسوب)', m.free_cash_flow)}${metric('التوزيع للسهم', L.dps)}
-    </div><h2>التقييم</h2>
-    ${a.valuation.price_as_of ? `<div class="sub">السعر المستخدم بتاريخ ${esc(a.valuation.price_as_of)} — <a href="${esc(a.valuation.price_source)}" target="_blank" rel="noopener noreferrer">مصدر السعر</a>. السعر ليس لحظيًا.</div>` : ''}
-    <div class="grid2">${metric('القيمة السوقية (مليون ريال)', a.valuation.market_cap, '')}${metric('مكرر الربحية (آخر 12 شهرًا)', a.valuation.pe_ttm)}${metric('عائد التوزيع', a.valuation.dividend_yield_pct, '٪')}
-      ${metric(`وسيط مكرر القطاع (${a.sector.peers_count} شركات ببيانات)`, a.sector.pe_median)}${metric('وسيط الهامش الصافي للقطاع', a.sector.net_margin_median, '٪')}</div>` : ''}
-    ${a.notes.length ? `<h2>حدود البيانات</h2><ul>${a.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
-    <div class="notice warn">الفرص والمخاطر: تُقرأ من الأرقام أعلاه ومن الإفصاحات الأصلية. هذه الصفحة لا تقدم توصية شخصية بالشراء أو البيع.</div>
-    ${d.reports.length ? `<h2>الفترات المُدخلة</h2><div class="table-wrap"><table class="data"><thead><tr><th>الفترة</th><th>الإيرادات</th><th>صافي الربح</th><th>غير متكرر</th><th>المصدر</th></tr></thead><tbody>
-      ${d.reports.map((r) => `<tr><td>${esc(r.period)}</td><td>${fmtNum(r.revenue)}</td><td>${fmtNum(r.net_profit)}</td><td>${fmtNum(r.non_recurring)}</td><td><a href="${esc(r.source_url)}" target="_blank" rel="noopener noreferrer">إفصاح</a></td></tr>`).join('')}</tbody></table></div>` : ''}
-    <h2>أخبار مرتبطة</h2>
-    ${d.events.map((e) => `<div class="list-row"><a href="#/event/${e.id}" dir="auto">${esc(e.title)}</a><span class="sub">${esc(fmtS(e.occurred_at || e.first_seen_at))}</span></div>`).join('') || '<p class="sub">لا أخبار مرتبطة بعد.</p>'}`;
 }
 
 async function pageSources() {
@@ -375,8 +335,6 @@ async function route() {
     else if (parts[0] === 'bulletin' && parts[1]) await pageBulletin(parts[1]);
     else if (parts[0] === 'event' && parts[1]) await pageEvent(parts[1]);
     else if (parts[0] === 'search') await pageSearch(params);
-    else if (parts[0] === 'companies') await pageCompanies();
-    else if (parts[0] === 'company' && parts[1]) await pageCompany(parts[1]);
     else if (parts[0] === 'sources') await pageSources();
     else app.innerHTML = '<p>الصفحة غير موجودة.</p>';
     window.scrollTo(0, 0);

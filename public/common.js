@@ -37,12 +37,10 @@ async function staticApi(path) {
   if (p === '/api/status') return get('data/status.json');
   if (p === '/api/sections') return get('data/sections.json');
   if (p === '/api/sources') return get('data/sources.json');
-  if (p === '/api/companies') return get('data/companies.json');
   if (p === '/api/bulletins/latest') return get('data/bulletins/latest.json');
   if (p === '/api/bulletins') return get(`data/bulletins/list-${q.get('empty') === '1' ? 'all' : 'pub'}-${Math.max(1, parseInt(q.get('page'), 10) || 1)}.json`, 'لا توجد صفحة بهذا الرقم');
   if ((m = p.match(/^\/api\/bulletins\/(\d+)$/))) return get(`data/bulletins/${m[1]}.json`, 'النشرة غير موجودة');
   if ((m = p.match(/^\/api\/events\/(\d+)$/))) return get(`data/events/${m[1]}.json`, 'تفاصيل هذا الحدث غير منشورة (الصفحات التفصيلية متاحة للأحداث الحديثة؛ الأقدم يظهر في النشرات والبحث).');
-  if ((m = p.match(/^\/api\/companies\/(\w+)$/))) return get(`data/companies/${m[1]}.json`, 'الشركة غير موجودة');
   if (p === '/api/search') return (await import('./static-search.js')).searchStatic(Object.fromEntries(q));
   if (p === '/api/admin/me') return { admin: true, enabled: true, static: true };
   if (p === '/api/admin/overview') return get('data/admin.json');
