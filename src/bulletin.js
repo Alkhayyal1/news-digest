@@ -75,7 +75,9 @@ export function buildBulletin(db, { slotKey, runId = null, now = Date.now(), not
     const srcCount = db.prepare('SELECT COUNT(DISTINCT source_id) n FROM items WHERE event_id = ? AND excluded = 0');
     const rank = (x) => x.importance + 0.5 * (srcCount.get(x.id).n - 1);
     const perSection = new Map();
-    const recent = rows.filter((x) => (x.occurred_at ?? x.first_seen_at) >= now - HIGHLIGHT_WINDOW_H * HOUR && x.importance >= HIGHLIGHT_MIN_IMPORTANCE)
+    // A single-source item needs a higher score: an official feature story alone is not "important".
+    const recent = rows.filter((x) => (x.occurred_at ?? x.first_seen_at) >= now - HIGHLIGHT_WINDOW_H * HOUR && x.importance >= HIGHLIGHT_MIN_IMPORTANCE
+        && (srcCount.get(x.id).n >= 2 || x.importance >= HIGHLIGHT_MIN_IMPORTANCE + 1))
       .sort((a, b) => rank(b) - rank(a))
       .filter((x) => {
         const n = perSection.get(x.section) || 0;
