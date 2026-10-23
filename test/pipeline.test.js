@@ -98,7 +98,6 @@ test('Arabic search with spelling variants, filters, and retrieval of old bullet
   assert.equal(searchEvents(db, { q: 'الإنفلونزا' }).total, 2);
   assert.equal(searchEvents(db, { q: 'انفلونزا', scope: 'saudi' }).total, 1);
   assert.equal(searchEvents(db, { q: 'انفلونزا', scope: 'world' }).total, 1);
-  assert.equal(searchEvents(db, { company: '2222' }).total, 1, 'company filter by ticker');
   assert.equal(searchEvents(db, { q: '2222' }).total, 1, 'search by ticker symbol');
   assert.equal(searchEvents(db, { source: 'b' }).total, 1);
   assert.equal(searchEvents(db, { from: NOW - 3 * H, to: NOW }).total, 2, 'date filter');

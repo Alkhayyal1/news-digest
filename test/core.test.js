@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFeed, parseSpaNextData, splitSpaPrefix } from '../src/core/feeds.js';
 import { normalizeArabic, tokenize } from '../src/core/arabic.js';
-import { analyzeCompany } from '../src/core/finance.js';
+import { classify } from '../src/core/classify.js';
+import { SECTIONS } from '../src/core/lexicon.js';
 import { extractNumbers, stripHtml } from '../src/core/text.js';
 import { isDirectArticleUrl } from '../src/core/url.js';
 
@@ -39,26 +40,11 @@ test('numbers and direct links', () => {
   assert.equal(isDirectArticleUrl('https://www.spa.gov.sa/N2707791'), true);
 });
 
-test('company analysis computes only what the disclosed data supports', () => {
-  const base = { source_url: 'https://example.test/disclosure', shares_outstanding: 100 };
-  const empty = analyzeCompany([], null);
-  assert.equal(empty.latest, null);
-  const a = analyzeCompany([
-    { ...base, period: '2026-Q2', revenue: 1200, gross_profit: 400, operating_profit: 300, net_profit: 220, non_recurring: 20, total_debt: 500, cash: 200, equity: 1000, operating_cash_flow: 260, capex: -60, dps: 0.5 },
-    { ...base, period: '2025-Q2', revenue: 1000, net_profit: 200, operating_profit: 250 },
-    { ...base, period: '2026-Q1', revenue: 1100, net_profit: 210 },
-  ], null);
-  assert.equal(Math.round(a.metrics.revenue_yoy_pct), 20);
-  assert.equal(Math.round(a.metrics.net_profit_qoq_pct * 10) / 10, 4.8);
-  assert.equal(a.metrics.recurring_net_profit, 200);
-  assert.equal(a.metrics.free_cash_flow, 200);
-  assert.equal(a.metrics.net_debt, 300);
-  assert.equal(a.valuation.pe_ttm, null, 'no valuation without a dated price');
-  assert.ok(a.notes.some((n) => n.includes('سعر')));
-  assert.ok(a.notes.some((n) => n.includes('أربعة أرباع')));
-  const withPrice = analyzeCompany([
-    { ...base, period: '2026-Q2', net_profit: 25 }, { ...base, period: '2026-Q1', net_profit: 25 }, { ...base, period: '2025-Q4', net_profit: 25 }, { ...base, period: '2025-Q3', net_profit: 25 },
-  ], { price: 20, as_of: '2026-10-20', source_url: 'https://example.test/price' });
-  assert.equal(withPrice.valuation.market_cap, 2000);
-  assert.equal(withPrice.valuation.pe_ttm, 20);
+test('stock-market sections are gone; market news is classified as Saudi economy', () => {
+  assert.ok(!SECTIONS.some((s) => s.key === 'sa_market' || s.key === 'sa_companies'));
+  const c = classify({ title: 'مؤشر تاسي يرتفع 50 نقطة بسيولة 6 مليارات ريال', summary: 'ارتفع مؤشر السوق الرئيسية في تداول السعودية بدعم من أسهم البنوك.' });
+  assert.equal(c.scope, 'saudi');
+  assert.equal(c.section, 'sa_economy');
+  const r = classify({ title: 'أرامكو السعودية تعلن صافي الربح للربع الثالث', summary: 'أعلنت أرامكو النتائج المالية للربع الثالث.' });
+  assert.equal(r.section, 'sa_economy');
 });

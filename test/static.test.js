@@ -8,7 +8,7 @@ import { freshDb, addSource, H } from './helpers.js';
 import { processItem } from '../src/ingest.js';
 import { buildBulletin } from '../src/bulletin.js';
 import { buildSite } from '../src/static/build.js';
-import { applyOverrides, applyFinancials } from '../src/config-files.js';
+import { applyOverrides } from '../src/config-files.js';
 
 const NOW = Date.parse('2026-10-22T12:00:00+03:00');
 
@@ -24,7 +24,7 @@ test('static build writes every file the UI needs, and in-browser search works o
     const out = join(dir, 'site');
     const stats = buildSite(db, out, { now: NOW + H });
     for (const f of ['index.html', 'app.js', 'common.js', 'static-search.js', 'core/arabic.js', '.nojekyll', 'data/status.json', 'data/sections.json', 'data/bulletins/latest.json',
-      `data/bulletins/${bulletin.id}.json`, 'data/bulletins/list-pub-1.json', 'data/bulletins/list-all-1.json', `data/events/${r1.eventId}.json`, 'data/companies.json', 'data/companies/2222.json', 'data/search/manifest.json', 'data/admin.json']) {
+      `data/bulletins/${bulletin.id}.json`, 'data/bulletins/list-pub-1.json', 'data/bulletins/list-all-1.json', `data/events/${r1.eventId}.json`, 'data/search/manifest.json', 'data/admin.json']) {
       assert.ok(existsSync(join(out, f)), `missing ${f}`);
     }
     assert.match(readFileSync(join(out, 'index.html'), 'utf8'), /name="static-mode"/);
@@ -44,7 +44,6 @@ test('static build writes every file the UI needs, and in-browser search works o
       const { searchStatic } = await import(pathToFileURL(join(out, 'static-search.js')).href);
       assert.equal((await searchStatic({ q: 'ارامكو' })).total, 1);
       assert.equal((await searchStatic({ q: 'الإنفلونزا', scope: 'world' })).total, 1);
-      assert.equal((await searchStatic({ company: '2222' })).total, 1);
       assert.equal((await searchStatic({ q: 'توزيعات الارباح' })).results[0].id, r1.eventId);
       assert.equal((await searchStatic({ q: 'كلمةغيرموجودة' })).total, 0);
     } finally {
@@ -55,7 +54,7 @@ test('static build writes every file the UI needs, and in-browser search works o
   }
 });
 
-test('repository config files: overrides apply once, financials need a source link', () => {
+test('repository config file: overrides apply once', () => {
   const dir = mkdtempSync(join(tmpdir(), 'nd-cfg-'));
   try {
     const db = freshDb();
@@ -68,16 +67,6 @@ test('repository config files: overrides apply once, financials need a source li
     assert.equal(db.prepare('SELECT merged_into FROM events WHERE id = ?').get(e2.eventId).merged_into, e1.eventId);
     const log2 = applyOverrides(db, ov, NOW);
     assert.equal(log2.length, 0, 'already-applied operations are not repeated');
-
-    const fin = join(dir, 'financials.json');
-    writeFileSync(fin, JSON.stringify({ reports: [
-      { symbol: '2222', period: '2026-Q2', net_profit: 100, source_url: 'https://example.test/disclosure' },
-      { symbol: '2222', period: '2026-Q1', net_profit: 90 },
-    ], prices: [{ symbol: '2222', price: 25, as_of: '2026-10-20' }] }));
-    const log = applyFinancials(db, fin, NOW);
-    assert.equal(db.prepare('SELECT COUNT(*) n FROM financial_reports').get().n, 1);
-    assert.equal(db.prepare('SELECT COUNT(*) n FROM prices').get().n, 0);
-    assert.equal(log.length, 2, 'rejected rows are reported');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
