@@ -34,7 +34,7 @@ const out = document.getElementById('out');
 const log = [];
 window.__results = null;
 globalThis.__SQL = await initSqlJs({ locateFile: (f) => globalThis.__SQLJS + f });
-for (const f of ['/migrations/001_init.sql', '/src/core/arabic.js', ...['index.html', 'admin.html', 'styles.css', 'app.js', 'admin.js', 'common.js', 'theme.js', 'favicon.svg', 'static-search.js'].map((x) => '/public/' + x)]) files.set(f, await (await fetch(f)).text());
+for (const f of ['/migrations/001_init.sql', '/migrations/002_remove_stock_sections.sql', '/src/core/arabic.js', ...['index.html', 'admin.html', 'styles.css', 'app.js', 'admin.js', 'common.js', 'theme.js', 'favicon.svg', 'static-search.js'].map((x) => '/public/' + x)]) files.set(f, await (await fetch(f)).text());
 const list = (new URLSearchParams(location.search).get('files') || 'core,dedup,pipeline,scheduler,static').split(',');
 for (const f of list) {
   try {

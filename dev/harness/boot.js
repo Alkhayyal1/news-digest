@@ -5,7 +5,7 @@ import { files } from '/dev/harness/shims.js';
 
 export async function boot({ engine = 'fts5' } = {}) {
   globalThis.__SQL = await initSqlJs({ locateFile: (f) => globalThis.__SQLJS + f });
-  files.set('/migrations/001_init.sql', await (await fetch('/migrations/001_init.sql')).text());
+  files.set('/migrations/001_init.sql', '/migrations/002_remove_stock_sections.sql', await (await fetch('/migrations/001_init.sql')).text());
   const map = await (await fetch('/dev/.fixtures/map.json')).json();
   const fetchImpl = async (url) => {
     const f = map[url];

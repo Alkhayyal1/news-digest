@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="static-mode" content="1">
+<title>UI preview on live data (dev only)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/public/styles.css">
+<script type="importmap">{ "imports": { "/public/core/arabic.js": "/src/core/arabic.js" } }</script>
+<script>
+// Local UI files, data from the published site (read-only). Usage: ?site=https://user.github.io/repo/
+const SITE = new URLSearchParams(location.search).get('site') || 'https://alkhayyal1.github.io/news-digest/';
+const realFetch = window.fetch.bind(window);
+window.fetch = (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  return realFetch(url.startsWith('data/') ? SITE + url : input, init);
+};
+</script>
+<script type="module" src="/public/theme.js"></script>
+<script type="module" src="/public/app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="#/"><span class="mark" aria-hidden="true">ن</span>نشرة <span class="accent">الموثوق</span></a>
+      <nav class="main" aria-label="التنقل الرئيسي">
+        <a href="#/" data-nav="home">آخر نشرة</a><a href="#/archive" data-nav="archive">الأرشيف</a><a href="#/search" data-nav="search">البحث</a>
+        <a href="#/sources" data-nav="sources">المصادر</a>
+      </nav>
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="تبديل الوضع الليلي">◐</button>
+    </div>
+  </header>
+  <main class="wrap" id="app" aria-live="polite"><p class="sub">جارٍ التحميل…</p></main>
+</body>
+</html>
