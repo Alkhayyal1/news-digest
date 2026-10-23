@@ -1,0 +1,106 @@
+name: update
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run a news update now, regardless of the schedule'
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+    paths: ['src/**', 'public/**', 'config/**', 'migrations/**', 'package.json', '.github/workflows/update.yml']
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: news-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+    env:
+      DB_PATH: data/news.db
+      GH_TOKEN: ${{ github.token }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      AI_MODEL: ${{ vars.AI_MODEL || 'claude-opus-5-5' }}
+      SCHEDULE_ANCHOR: ${{ vars.SCHEDULE_ANCHOR }}
+      SCHEDULER_ENABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install
+        run: npm install --omit=dev --no-audit --no-fund
+
+      - name: Download database
+        run: |
+          mkdir -p data
+          if out=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/db" 2>&1); then
+            gh release download db --pattern news.db.gz --dir data
+            cp data/news.db.gz data/news-prev.db.gz
+            gunzip -f data/news.db.gz
+            echo "Database restored ($(stat -c %s data/news.db) bytes)"
+          elif echo "$out" | grep -q "HTTP 404"; then
+            echo "No database release yet: first run starts empty."
+          else
+            echo "$out"; exit 1
+          fi
+
+      - name: Update (scheduler tick or forced run)
+        id: tick
+        run: node src/cli.js update ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '--force' || '' }}
+
+      - name: Decide whether to publish
+        id: decide
+        run: |
+          if [ "${{ steps.tick.outputs.ran }}" = "true" ] || [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload database
+        if: steps.decide.outputs.publish == 'true'
+        run: |
+          gzip -kf data/news.db
+          gh release view db >/dev/null 2>&1 || gh release create db --title "database" --notes "SQLite database used between runs. Do not delete." --latest=false
+          gh release upload db data/news.db.gz --clobber
+          if [ -f data/news-prev.db.gz ]; then gh release upload db data/news-prev.db.gz --clobber; fi
+
+      - name: Build static site
+        if: steps.decide.outputs.publish == 'true'
+        run: node src/cli.js build site
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.decide.outputs.publish == 'true'
+        with:
+          path: site
+
+      - name: Keep schedule enabled
+        continue-on-error: true
+        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/update.yml/enable"
+
+  deploy:
+    needs: update
+    if: needs.update.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
