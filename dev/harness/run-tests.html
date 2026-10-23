@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Browser test harness (dev only)</title>
+<script>globalThis.process = { env: {}, argv: [] };</script>
+<script type="importmap">
+{ "imports": {
+  "node:sqlite": "/dev/harness/node/sqlite.js",
+  "node:fs": "/dev/harness/node/fs.js",
+  "node:fs/promises": "/dev/harness/node/fs-promises.js",
+  "node:path": "/dev/harness/node/path.js",
+  "node:url": "/dev/harness/node/url.js",
+  "node:os": "/dev/harness/node/os.js",
+  "node:crypto": "/dev/harness/node/crypto.js",
+  "node:http": "/dev/harness/node/http.js",
+  "node:test": "/dev/harness/node/test.js",
+  "node:assert/strict": "/dev/harness/node/assert.js"
+} }
+</script>
+<script>
+// ?engine=fts5 loads a sql.js build compiled with FTS5 (closer to Node's bundled SQLite)
+globalThis.__SQLJS = new URLSearchParams(location.search).get('engine') === 'fts5' ? 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/' : 'https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/';
+document.write('<script src="' + globalThis.__SQLJS + 'sql-wasm.js"><\/script>');
+</script>
+<style>body{font:14px/1.5 monospace;padding:16px} .pass{color:green} .fail{color:#b00}</style>
+</head>
+<body>
+<h1>Test run</h1>
+<pre id="out">running…</pre>
+<script type="module">
+import { files, registered } from '/dev/harness/shims.js';
+const out = document.getElementById('out');
+const log = [];
+window.__results = null;
+globalThis.__SQL = await initSqlJs({ locateFile: (f) => globalThis.__SQLJS + f });
+for (const f of ['/migrations/001_init.sql', '/src/core/arabic.js', ...['index.html', 'admin.html', 'styles.css', 'app.js', 'admin.js', 'common.js', 'theme.js', 'favicon.svg', 'static-search.js'].map((x) => '/public/' + x)]) files.set(f, await (await fetch(f)).text());
+const list = (new URLSearchParams(location.search).get('files') || 'core,dedup,pipeline,scheduler,static').split(',');
+for (const f of list) {
+  try {
+    await import(`/test/${f}.test.js`);
+  } catch (e) {
+    log.push({ name: `import ${f}`, ok: false, error: e.stack || String(e) });
+  }
+}
+for (const t of registered) {
+  const t0 = performance.now();
+  try {
+    await t.fn();
+    log.push({ name: t.name, ok: true, ms: Math.round(performance.now() - t0) });
+  } catch (e) {
+    log.push({ name: t.name, ok: false, error: (e && e.stack) || String(e) });
+  }
+}
+const db = new globalThis.__SQL.Database();
+let fts5 = true;
+try { db.exec('CREATE VIRTUAL TABLE t USING fts5(a)'); } catch { fts5 = false; }
+window.__results = { pass: log.filter((x) => x.ok).length, fail: log.filter((x) => !x.ok).length, fts5, log };
+out.innerHTML = `FTS5 in this SQLite build: ${fts5}\n` + log.map((x) => `<span class="${x.ok ? 'pass' : 'fail'}">${x.ok ? 'PASS' : 'FAIL'}</span> ${x.name}${x.ms != null ? ` (${x.ms}ms)` : ''}${x.error ? '\n    ' + x.error.replace(/</g, '&lt;') : ''}`).join('\n') + `\n\n${window.__results.pass} passed, ${window.__results.fail} failed`;
+</script>
+</body>
+</html>

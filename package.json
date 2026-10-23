@@ -1,0 +1,20 @@
+{
+  "name": "saudi-news-digest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Arabic RTL news digest: trusted sources, 7-hour bulletins, dedup, searchable archive",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "start:local": "node --env-file=.env src/server.js",
+    "test": "node --test test/*.test.js",
+    "update": "node src/cli.js update",
+    "build:static": "node src/cli.js build site"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0"
+  }
+}

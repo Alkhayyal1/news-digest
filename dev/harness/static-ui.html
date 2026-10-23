@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="static-mode" content="1">
+<title>Static build preview (dev only)</title>
+<link rel="stylesheet" href="/public/styles.css">
+<script>globalThis.process = { env: { GITHUB_REPOSITORY: 'owner/repo' }, argv: [] }; globalThis.__SQLJS = 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/';</script>
+<script type="importmap">
+{ "imports": {
+  "node:sqlite": "/dev/harness/node/sqlite.js", "node:fs": "/dev/harness/node/fs.js", "node:fs/promises": "/dev/harness/node/fs-promises.js",
+  "node:path": "/dev/harness/node/path.js", "node:url": "/dev/harness/node/url.js", "node:os": "/dev/harness/node/os.js",
+  "node:crypto": "/dev/harness/node/crypto.js", "node:http": "/dev/harness/node/http.js",
+  "/public/core/arabic.js": "/src/core/arabic.js"
+} }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.js"></script>
+</head>
+<body>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="#/">نشرة <span>الموثوق</span></a>
+    <nav class="main" aria-label="التنقل الرئيسي">
+      <a href="#/" data-nav="home">آخر نشرة</a><a href="#/archive" data-nav="archive">الأرشيف</a><a href="#/search" data-nav="search">البحث</a>
+      <a href="#/companies" data-nav="companies">شركات تداول</a><a href="#/sources" data-nav="sources">المصادر والتغطية</a>
+    </nav>
+    <button class="icon-btn" id="theme-toggle" type="button" aria-label="تبديل الوضع الليلي">◐</button>
+  </div></header>
+  <main class="wrap" id="app"><p class="sub">بناء النسخة الثابتة داخل المتصفح…</p></main>
+<script type="module">
+import { boot } from '/dev/harness/boot.js';
+import { files } from '/dev/harness/shims.js';
+for (const f of ['/src/core/arabic.js', ...['index.html', 'admin.html', 'styles.css', 'app.js', 'admin.js', 'common.js', 'theme.js', 'favicon.svg', 'static-search.js'].map((x) => '/public/' + x)]) files.set(f, await (await fetch(f)).text());
+const { db, fetchImpl, runUpdate } = await boot();
+await runUpdate(db, { kind: 'manual', fetchImpl });
+const { buildSite } = await import('/src/static/build.js');
+window.__stats = buildSite(db, '/site');
+const realFetch = window.fetch.bind(window);
+// the built site's data/ files live in the virtual FS
+window.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  if (url.startsWith('data/')) {
+    const body = files.get('/site/' + url);
+    return body === undefined ? new Response('', { status: 404 }) : new Response(body, { headers: { 'content-type': 'application/json' } });
+  }
+  return realFetch(input, init);
+};
+window.__files = files;
+await import('/public/theme.js');
+await import('/public/app.js');
+</script>
+</body>
+</html>

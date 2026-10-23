@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI preview with in-browser backend (dev only)</title>
+<link rel="stylesheet" href="/public/styles.css">
+<script>
+globalThis.process = { env: {}, argv: [] };
+globalThis.__SQLJS = 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/';
+// minimal Buffer for server.js helpers (harness only)
+globalThis.Buffer = { isBuffer: () => false, from: (s) => ({ length: String(s).length, toString: () => String(s) }), concat: (a) => ({ toString: () => a.map((x) => new TextDecoder().decode(x)).join('') }) };
+</script>
+<script type="importmap">
+{ "imports": {
+  "node:sqlite": "/dev/harness/node/sqlite.js", "node:fs": "/dev/harness/node/fs.js", "node:fs/promises": "/dev/harness/node/fs-promises.js",
+  "node:path": "/dev/harness/node/path.js", "node:url": "/dev/harness/node/url.js", "node:os": "/dev/harness/node/os.js",
+  "node:crypto": "/dev/harness/node/crypto.js", "node:http": "/dev/harness/node/http.js"
+} }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="#/">نشرة <span>الموثوق</span></a>
+      <nav class="main" aria-label="التنقل الرئيسي">
+        <a href="#/" data-nav="home">آخر نشرة</a>
+        <a href="#/archive" data-nav="archive">الأرشيف</a>
+        <a href="#/search" data-nav="search">البحث</a>
+        <a href="#/companies" data-nav="companies">شركات تداول</a>
+        <a href="#/sources" data-nav="sources">المصادر والتغطية</a>
+      </nav>
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="تبديل الوضع الليلي">◐</button>
+    </div>
+  </header>
+  <main class="wrap" id="app"><p class="sub">تشغيل الخلفية داخل المتصفح على نسخ محلية من الخلاصات الحقيقية…</p></main>
+<script type="module">
+import { boot } from '/dev/harness/boot.js';
+const { db, fetchImpl, runUpdate } = await boot();
+await runUpdate(db, { kind: 'manual', fetchImpl });
+const { createApp } = await import('/src/server.js');
+const handler = createApp(db, { fetchImpl });
+const realFetch = window.fetch.bind(window);
+window.fetch = async (input, init = {}) => {
+  const url = typeof input === 'string' ? input : input.url;
+  if (!url.startsWith('/api/')) return realFetch(input, init);
+  const headers = Object.fromEntries(Object.entries(init.headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
+  const body = init.body ? [new TextEncoder().encode(init.body)] : [];
+  const req = { url, method: init.method || 'GET', headers, socket: { remoteAddress: '127.0.0.1' }, async *[Symbol.asyncIterator]() { yield* body; } };
+  return new Promise((resolve) => {
+    const res = { _h: {}, setHeader(k, v) { this._h[k] = v; }, writeHead(s, h) { this._s = s; Object.assign(this._h, h); }, end(b) { resolve(new Response(b ?? '', { status: this._s || 200, headers: this._h })); } };
+    handler(req, res);
+  });
+};
+window.__db = db;
+await import('/public/theme.js');
+await import('/public/app.js');
+</script>
+</body>
+</html>
