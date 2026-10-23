@@ -104,9 +104,6 @@ export function classify({ title, summary = '', categories = [], source = {}, so
   if (source.section_hint && score[source.section_hint] !== undefined) score[source.section_hint] += 1.5;
   for (const [re, map] of CATEGORY_HINTS) if (re.test(catNorm) && map[scope] && score[map[scope]] !== undefined) score[map[scope]] += 1.5;
   if (scope === 'saudi') {
-    const companies = entities.filter((e) => e.kind === 'company');
-    if (companies.length && score.sa_companies > 0) score.sa_companies += 2;
-    if (score.sa_market > 0 && score.sa_companies > 0 && !companies.length) score.sa_market += 1;
     if (sport.sportsFinance) score.sa_economy += 3;
   } else if (sport.sportsFinance) {
     score.w_business += 3;
