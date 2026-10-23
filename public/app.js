@@ -22,17 +22,22 @@ async function renderStatus(el) {
   const ok = enabled.filter((x) => x.health === 'ok').length;
   const failing = enabled.filter((x) => x.health === 'failing');
   const lr = s.lastRun;
+  const failed = lr && lr.status === 'failed';
+  const refresh = s.static
+    ? (s.actionsUrl ? `<a class="btn ghost small" href="${esc(s.actionsUrl)}" target="_blank" rel="noopener" title="متاح لمالك المستودع: Run workflow">تحديث يدوي</a>` : '')
+    : `<button class="btn small" id="refresh" ${s.running ? 'disabled' : ''}>${s.running ? '<span class="spinner"></span> جارٍ التحديث' : 'تحديث الآن'}</button>`;
   el.innerHTML = `
-    <div class="statusbar">
-      <div class="stat"><div class="k">آخر تحديث ناجح</div><div class="v">${s.lastSuccessAt ? `${esc(fmt(s.lastSuccessAt))}` : 'لم يكتمل أي تحديث بعد'}</div><div class="k">${esc(ago(s.lastSuccessAt))}</div></div>
-      <div class="stat"><div class="k">التحديث القادم (كل ${s.schedule.intervalHours} ساعات)</div><div class="v">${s.schedulerEnabled ? esc(fmt(s.schedule.nextRunAt)) : 'الجدولة معطلة على هذا الخادم'}</div><div class="k">${s.schedulerEnabled ? esc(until(s.schedule.nextRunAt)) : ''}${s.schedule.retry ? ' — إعادة محاولة بعد فشل' : ''}${s.static ? ' — يُنفَّذ عبر GitHub Actions وقد يتأخر حتى ساعة' : ''}</div></div>
-      <div class="stat"><div class="k">حالة المصادر</div><div class="v"><a href="#/sources">${ok} من ${enabled.length} تعمل</a></div><div class="k">${failing.length ? `متعطل: ${failing.slice(0, 3).map((f) => esc(f.name)).join('، ')}${failing.length > 3 ? '…' : ''}` : 'لا أعطال مسجلة'}</div></div>
-      <div class="stat actions"><div><div class="k">التلخيص</div><div class="v">${s.aiMode === 'ai' ? 'بالذكاء الاصطناعي' : 'وضع محدود (بدون تلخيص آلي)'}</div></div>
-        ${s.static ? (s.actionsUrl ? `<a class="btn" href="${esc(s.actionsUrl)}" target="_blank" rel="noopener" title="لمالك المستودع: اضغط Run workflow">تحديث يدوي</a>` : '') : `<button class="btn" id="refresh" ${s.running ? 'disabled' : ''}>${s.running ? '<span class="spinner"></span> جارٍ التحديث' : 'تحديث الآن'}</button>`}</div>
+    <div class="dateline">${esc(todayLine())}</div>
+    <div class="statusline" role="status">
+      <span class="item"><span class="dot ${failed ? 'bad' : ''}"></span>آخر تحديث <b>${s.lastSuccessAt ? esc(ago(s.lastSuccessAt)) : 'لم يكتمل بعد'}</b></span>
+      ${s.schedulerEnabled ? `<span class="item" title="${esc(fmt(s.schedule.nextRunAt))}${s.static ? ' — عبر GitHub Actions وقد يتأخر حتى ساعة' : ''}">القادم <b>${esc(fmtTime(s.schedule.nextRunAt))}</b> <span class="sub">${esc(until(s.schedule.nextRunAt))}</span></span>` : '<span class="item">الجدولة معطلة</span>'}
+      <span class="item"><span class="dot ${failing.length ? 'warn' : ''}"></span><a href="#/sources" title="${failing.length ? 'متعطل: ' + esc(failing.map((f) => f.name).join('، ')) : 'لا أعطال'}">المصادر ${ok}/${enabled.length}</a></span>
+      ${s.aiMode === 'ai' ? '<span class="pill ok">ملخصات آلية</span>' : '<span class="pill warn">وضع محدود</span>'}
+      <span class="spacer"></span>
+      ${refresh}
     </div>
-    ${lr && lr.status === 'failed' ? `<div class="notice danger">فشل آخر تحديث (${esc(fmt(lr.started_at))}). تُعرض آخر نشرة سليمة.</div>` : ''}
-    ${s.aiMode !== 'ai' ? '<div class="notice warn">يعمل الموقع في وضع محدود: العناوين تُعرض بلغة المصدر، والملخص مقتطف قصير من المصدر، ولا يُولَّد قسم «لماذا يهم؟». لتفعيل التلخيص يلزم مفتاح خدمة الذكاء الاصطناعي على الخادم.</div>' : ''}
-    ${s.static ? `<div class="sub">نسخة ثابتة بُنيت ${esc(fmt(s.builtAt))}. التحديث اليدوي متاح لمالك المستودع فقط، ولا يعمل تحديثان في الوقت نفسه.</div>` : ''}`;
+    ${s.aiMode !== 'ai' ? '<details class="explain"><summary>ما معنى «وضع محدود»؟</summary><p>التلخيص الآلي غير مفعّل: العناوين تظهر بلغة المصدر، والنص مقتطف قصير منه، ولا يُعرض «لماذا يهم؟». الأخبار نفسها حقيقية ومرتبطة بمصادرها.</p></details>' : ''}
+    ${failed ? `<div class="notice danger">فشل آخر تحديث (${esc(fmt(lr.started_at))}). تُعرض آخر نشرة سليمة.</div>` : ''}`;
   el.querySelector('#refresh')?.addEventListener('click', async (ev) => {
     const b = ev.currentTarget;
     b.disabled = true;
@@ -63,7 +68,27 @@ function pollUntilDone(el) {
   }, 4000);
 }
 
+// ---------- dates ----------
+const fmtWeekday = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { timeZone: 'Asia/Riyadh', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const fmtHijri = new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura-nu-latn', { timeZone: 'Asia/Riyadh', day: 'numeric', month: 'long', year: 'numeric' });
+const fmtClock = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { timeZone: 'Asia/Riyadh', hour: 'numeric', minute: '2-digit', hour12: true });
+function todayLine() {
+  const d = new Date();
+  let hijri = '';
+  try {
+    hijri = ' · ' + fmtHijri.format(d);
+  } catch {}
+  return `${fmtWeekday.format(d)}${hijri} · بتوقيت الرياض`;
+}
+function fmtTime(ms) {
+  if (!ms) return '—';
+  const sameDay = fmtWeekday.format(new Date(ms)) === fmtWeekday.format(new Date());
+  return sameDay ? fmtClock.format(new Date(ms)) : fmtS(ms);
+}
+
 // ---------- cards ----------
+const NOTABLE_VERIFY = { official: 'رسمي', confirmed: 'مؤكد', multi_source: 'عدة مصادر', preliminary: 'معلومات أولية', conflicting: 'روايات متضاربة' };
+
 function card(s, { highlight = null, kind = 'new', laterUpdates = 0 } = {}) {
   if (!s) return '';
   const p = s.primary || {};
@@ -71,32 +96,32 @@ function card(s, { highlight = null, kind = 'new', laterUpdates = 0 } = {}) {
   const type = kind === 'update' ? 'update' : s.content_type;
   const others = (s.sources || []).slice(1);
   const lastUpdate = (s.updates || []).slice(-1)[0];
-  const titleLangNote = limited && !isArabic(s.title) ? '<span class="badge limited">العنوان بلغة المصدر</span>' : '';
-  return `<article class="card" id="ev-${s.id}">
-    <div class="badges">
+  const ver = NOTABLE_VERIFY[s.verification];
+  const companies = (s.entities || []).filter((e) => e.kind === 'company');
+  const tags = (s.tags || []).filter((t) => !(s.entities || []).some((e) => e.label === t)).slice(0, 4);
+  return `<article class="card" id="ev-${s.id}" data-sec="${esc(s.section)}">
+    <div class="top">
       ${highlight ? `<span class="badge hl-${esc(highlight)}">${esc(highlight)}</span>` : ''}
-      <span class="badge type-${esc(type)}">${esc(TYPE[type] || type)}</span>
-      <span class="badge">${s.scope === 'saudi' ? 'سعودي' : 'عالمي'}</span>
-      <span class="badge">${esc(secName(s.section))}</span>
-      <span class="badge ver-${esc(s.verification)}">${esc(VERIFY[s.verification] || s.verification)}</span>
+      ${type !== 'news' ? `<span class="badge type-${esc(type)}">${esc(TYPE[type] || type)}</span>` : ''}
+      ${p.url ? `<a class="src" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer nofollow">${esc(p.source)}</a>` : `<span class="src">${esc(p.source || '—')}</span>`}
+      <span class="sep">·</span><span>${esc(ago(p.published_at || s.first_seen_at))}</span>
+      ${ver ? `<span class="badge ver-${esc(s.verification)}">${esc(ver)}</span>` : ''}
       ${s.research_note ? `<span class="badge ver-preliminary">${esc(RESEARCH[s.research_note] || '')}</span>` : ''}
-      ${titleLangNote}
+      ${limited && !isArabic(s.title) ? '<span class="badge limited">بلغة المصدر</span>' : ''}
     </div>
     <h4><a href="#/event/${s.id}" ${isArabic(s.title) ? '' : 'dir="auto"'}>${esc(s.title)}</a></h4>
     ${kind === 'update' && lastUpdate ? `<div class="changed"><b>ما الذي تغيّر:</b> ${esc(lastUpdate.changed)}</div>` : ''}
-    ${s.summary ? `<p class="summary" dir="auto">${limited ? '<span class="badge limited">مقتطف من المصدر</span> ' : ''}${esc(s.summary)}</p>` : ''}
+    ${s.summary ? `<p class="summary" dir="auto">${limited ? '<span class="excerpt-tag">مقتطف:</span>' : ''}${esc(s.summary)}</p>` : ''}
     ${s.facts?.length ? `<ul class="facts">${s.facts.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
-    ${s.why ? `<div class="why"><b>لماذا يهم؟</b> ${esc(s.why)} <span class="sub">(تقدير تحريري وليس حقيقة منشورة)</span></div>` : limited ? '<div class="why sub">«لماذا يهم؟» غير متاح في الوضع المحدود.</div>' : ''}
-    ${s.section === 'w_science' && !s.research_note ? '<div class="sub">لم يحدد المصدر طبيعة البحث (محكّم/أولي، بشر/حيوان). النتائج ليست توصيات علاجية.</div>' : s.section === 'w_science' ? '<div class="sub">النتائج البحثية ليست توصيات علاجية.</div>' : ''}
-    <div class="meta">
-      <span>المصدر: ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer nofollow">${esc(p.source)}</a>` : esc(p.source || '—')}</span>
-      <span>نشره المصدر: ${p.published_at ? esc(fmtS(p.published_at)) : 'غير محدد'}</span>
-      <span>أُضيف: ${esc(fmtS(s.first_seen_at))}</span>
-      ${s.updates?.length ? `<span>آخر تطور: ${esc(fmtS(s.last_update_at))}</span>` : ''}
-      ${laterUpdates ? `<a href="#/event/${s.id}">${laterUpdates} تحديث لاحق ←</a>` : ''}
+    ${s.why ? `<div class="why"><b>لماذا يهم؟</b> ${esc(s.why)} <span class="sub">(تقدير تحريري)</span></div>` : ''}
+    ${s.section === 'w_science' ? `<div class="science">${s.research_note ? '' : 'لم يحدد المصدر طبيعة البحث. '}النتائج البحثية ليست توصيات علاجية.</div>` : ''}
+    ${companies.length || tags.length ? `<div class="chips">${companies.map((e) => `<a class="chip" href="#/company/${esc(e.symbol)}">${esc(e.label)} · ${esc(e.symbol)}</a>`).join('')}${tags.map((t) => `<a class="chip" href="#/search?q=${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
+    ${others.length ? `<details class="more"><summary>${others.length === 1 ? 'مصدر آخر غطّى الخبر' : `${others.length} مصادر أخرى غطّت الخبر`}</summary><ul>${others.map((o) => `<li><a href="${esc(o.url)}" target="_blank" rel="noopener noreferrer nofollow">${esc(o.source)}</a> — <span dir="auto">${esc(o.title)}</span> <span class="sub">(${esc(fmtS(o.published_at))})</span></li>`).join('')}</ul></details>` : ''}
+    <div class="foot">
+      <span class="times"><span>نشر المصدر: ${p.published_at ? esc(fmtS(p.published_at)) : 'غير محدد'}</span><span>أُضيف: ${esc(fmtS(s.first_seen_at))}</span>${s.updates?.length ? `<span>آخر تطور: ${esc(fmtS(s.last_update_at))}</span>` : ''}</span>
+      ${laterUpdates ? `<a href="#/event/${s.id}">${laterUpdates} تحديث لاحق</a>` : ''}
+      <a class="more-link" href="#/event/${s.id}">التفاصيل ←</a>
     </div>
-    ${s.entities?.filter((e) => e.kind !== 'name').length || s.tags?.length ? `<div class="badges mt">${(s.entities || []).filter((e) => e.kind === 'company').map((e) => `<a class="badge" href="#/company/${esc(e.symbol)}">${esc(e.label)} ${esc(e.symbol)}</a>`).join('')}${(s.tags || []).filter((t) => !(s.entities || []).some((e) => e.label === t)).map((t) => `<a class="badge" href="#/search?q=${encodeURIComponent(t)}">#${esc(t)}</a>`).join('')}</div>` : ''}
-    ${others.length ? `<details class="more"><summary>مصادر إضافية (${others.length})</summary><ul>${others.map((o) => `<li><a href="${esc(o.url)}" target="_blank" rel="noopener noreferrer nofollow">${esc(o.source)}</a> — <span dir="auto">${esc(o.title)}</span> <span class="sub">(${esc(fmtS(o.published_at))})</span></li>`).join('')}</ul></details>` : ''}
   </article>`;
 }
 
@@ -112,22 +137,49 @@ function renderBulletinBody(b) {
   const hl = b.items.filter((x) => x.highlight);
   let html = '';
   if (hl.length) {
-    html += `<section class="highlights" aria-label="العاجل والمهم"><h2>العاجل والمهم</h2><ol>${hl.map((x) => `<li><span class="badge hl-${esc(x.highlight)}">${esc(x.highlight)}</span> <a href="#ev-${x.event_id}" data-jump="${x.event_id}">${esc(x.snapshot?.title)}</a> <span class="sub">— ${esc(secName(x.section))}</span></li>`).join('')}</ol>
-      <div class="sub">«عاجل» فقط لما وقع خلال 3 ساعات من صدور النشرة؛ النشرة تصدر كل 7 ساعات وليست تنبيهات لحظية.</div></section>`;
+    html += `<section class="highlights" aria-label="العاجل والمهم"><div class="label">العاجل والمهم</div>
+      <div class="hl-grid">${hl.map((x) => `<a class="hl-card" data-sec="${esc(x.section)}" href="#ev-${x.event_id}" data-jump="${x.event_id}">
+        <div class="t" ${isArabic(x.snapshot?.title) ? '' : 'dir="auto"'}>${esc(x.snapshot?.title)}</div>
+        <div class="m"><span class="badge hl-${esc(x.highlight)}">${esc(x.highlight)}</span><span>${esc(secName(x.section))}</span></div></a>`).join('')}</div>
+      <div class="hl-note">«عاجل» فقط لما وقع خلال 3 ساعات من صدور النشرة. النشرة تصدر كل 7 ساعات وليست تنبيهات لحظية.</div></section>`;
   }
-  for (const scope of ['saudi', 'world']) {
+  const scopes = [['saudi', 'السعودية'], ['world', 'العالم']];
+  const rail = scopes.map(([scope, label]) => `<div class="group"><div class="group-title">${label}</div><nav aria-label="أقسام ${label}">${SECTIONS.filter((s) => s.scope === scope).map((s) => {
+    const n = bySection.get(s.key)?.length || 0;
+    return `<a href="#sec-${s.key}" data-jump-sec="${s.key}" data-sec="${s.key}" class="${n ? '' : 'empty'}">${esc(s.name)} <span class="c">${n}</span></a>`;
+  }).join('')}</nav></div>`).join('');
+  let content = '';
+  for (const [scope, label] of scopes) {
     const secs = SECTIONS.filter((s) => s.scope === scope);
-    html += `<h2 class="scope-title">${scope === 'saudi' ? 'السعودية' : 'العالم'}</h2><nav class="toc">${secs.map((s) => `<a href="#sec-${s.key}" data-jump-sec="${s.key}">${esc(s.name)} (${bySection.get(s.key)?.length || 0})</a>`).join('')}</nav>`;
+    const total = secs.reduce((n, s) => n + (bySection.get(s.key)?.length || 0), 0);
+    content += `<section class="scope"><h2 class="scope-title">${label} <span class="n">${total} حدث</span></h2>`;
+    if (!total) content += '<div class="empty-scope">لا جديد في هذا النطاق ضمن هذه النشرة.</div>';
     for (const s of secs) {
       const items = bySection.get(s.key) || [];
-      html += `<section class="section" id="sec-${s.key}"><h3>${esc(s.name)}</h3>${s.hint ? `<div class="hint">${esc(s.hint)}</div>` : ''}
-        ${s.key === 'sa_market' || s.key === 'w_economy' ? '<div class="hint">الأرقام والأسعار الواردة في الأخبار تخص وقت نشر المصدر وليست بيانات لحظية. لا تُنسب أسباب لحركة الأسواق إلا إذا ذكرها المصدر.</div>' : ''}
-        ${s.key === 'sa_companies' ? '<div class="hint">للتحليل المالي المبني على الإفصاحات راجع <a href="#/companies">صفحة شركات تداول</a>.</div>' : ''}
-        ${items.length ? items.slice(0, SHOW_PER_SECTION).map(cardOf).join('') : '<div class="empty-sec">لا جديد في هذا القسم ضمن هذه النشرة.</div>'}
-        ${items.length > SHOW_PER_SECTION ? `<details class="more-sec"><summary>عرض ${items.length - SHOW_PER_SECTION} خبرًا آخر في هذا القسم</summary>${items.slice(SHOW_PER_SECTION).map(cardOf).join('')}</details>` : ''}</section>`;
+      // empty sections stay reachable from the rail but take no space in the page
+      if (!items.length) {
+        content += `<span id="sec-${s.key}"></span>`;
+        continue;
+      }
+      const hint = s.key === 'sa_market' || s.key === 'w_economy' ? 'الأرقام والأسعار في الأخبار تخص وقت نشر المصدر وليست لحظية، ولا تُنسب أسباب لحركة الأسواق إلا إذا ذكرها المصدر.'
+        : s.key === 'sa_companies' ? 'للتحليل المالي المبني على الإفصاحات راجع صفحة شركات تداول.' : '';
+      content += `<section class="section" id="sec-${s.key}" data-sec="${s.key}">
+        <div class="section-head"><h3>${esc(s.name)}</h3><span class="n">${items.length}</span></div>
+        ${hint ? `<div class="hint">${esc(hint)}</div>` : ''}
+        <div class="cards">${items.slice(0, SHOW_PER_SECTION).map(cardOf).join('')}</div>
+        ${items.length > SHOW_PER_SECTION ? `<details class="more-sec"><summary>عرض ${items.length - SHOW_PER_SECTION} خبرًا آخر في هذا القسم</summary><div class="cards">${items.slice(SHOW_PER_SECTION).map(cardOf).join('')}</div></details>` : ''}
+      </section>`;
     }
+    content += '</section>';
   }
+  html += `<div class="layout"><aside class="rail">${rail}</aside><div class="content">${content}</div></div>`;
   return html;
+}
+
+function bulletinHead(b, kicker) {
+  const period = b.period_from ? `من ${esc(fmtS(b.period_from))} إلى ${esc(fmtS(b.period_to))}` : 'أول نشرة';
+  return `<div class="bulletin-head"><div><div class="kicker">${kicker}</div><h1>${esc(b.title)}</h1></div>
+    <div class="facts-line">${b.event_count} حدث · ${period} · <a href="#/bulletin/${b.id}">رابط دائم</a></div></div>`;
 }
 
 function wireJumps() {
@@ -153,8 +205,7 @@ async function pageHome() {
     body.innerHTML = '<div class="notice info">لم تُنشر أي نشرة بعد. سيبدأ الخادم أول تحديث تلقائيًا، أو اضغط «تحديث الآن».</div>';
     return;
   }
-  body.innerHTML = `<h1 class="page">${esc(bulletin.title)}</h1>
-    <div class="sub">${bulletin.period_from ? `تغطي الفترة من ${esc(fmt(bulletin.period_from))} إلى ${esc(fmt(bulletin.period_to))}` : 'أول نشرة: تغطي آخر ما نشرته المصادر قبل التشغيل الأول'} — ${bulletin.event_count} حدث. <a href="#/bulletin/${bulletin.id}">رابط دائم لهذه النشرة</a></div>
+  body.innerHTML = `${bulletinHead(bulletin, 'آخر نشرة')}
     ${newerEmpty ? `<div class="notice info">آخر تحديث (${esc(fmt(newerEmpty.created_at))}) لم يجد أخبارًا جديدة مهمة، لذلك تبقى هذه النشرة معروضة. لا نعيد تدوير الأخبار القديمة.</div>` : ''}
     ${bulletin.note ? `<div class="notice warn">${esc(bulletin.note)}</div>` : ''}
     ${renderBulletinBody(bulletin)}`;
@@ -164,8 +215,8 @@ async function pageHome() {
 async function pageBulletin(id) {
   setNav('archive');
   const b = await api(`/api/bulletins/${encodeURIComponent(id)}`);
-  app.innerHTML = `<h1 class="page">${esc(b.title)}</h1>
-    <div class="sub">نُشرت ${esc(fmt(b.created_at))}. تُعرض العناصر كما ظهرت وقت النشر؛ التطورات اللاحقة تظهر كروابط.</div>
+  app.innerHTML = `${bulletinHead(b, 'من الأرشيف')}
+    <div class="sub">تُعرض العناصر كما ظهرت وقت النشر، والتطورات اللاحقة تظهر كروابط.</div>
     ${b.status === 'empty' ? `<div class="notice info">${esc(b.note || 'لا أخبار جديدة')}</div>` : ''}
     ${b.note && b.status !== 'empty' ? `<div class="notice warn">${esc(b.note)}</div>` : ''}
     ${renderBulletinBody(b)}`;
