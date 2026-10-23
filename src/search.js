@@ -13,7 +13,7 @@ export function buildFtsQuery(q, mode = 'AND') {
   return parts.join(` ${mode} `);
 }
 
-// filters: { q, from, to (epoch ms), scope, section, source (key), company (symbol), type, sort: 'relevance'|'latest', page }
+// filters: { q, from, to (epoch ms), scope, section, source (key), type, sort: 'relevance'|'latest', page }
 export function searchEvents(db, f = {}) {
   const where = ['e.hidden = 0'];
   const params = [];
@@ -26,7 +26,6 @@ export function searchEvents(db, f = {}) {
     else { where.push('e.content_type = ?'); params.push(String(f.type)); }
   }
   if (f.source) { where.push('EXISTS (SELECT 1 FROM items i JOIN sources s ON s.id = i.source_id WHERE i.event_id = e.id AND s.key = ?)'); params.push(String(f.source)); }
-  if (f.company) { where.push('EXISTS (SELECT 1 FROM event_entities x WHERE x.event_id = e.id AND x.symbol = ?)'); params.push(String(f.company)); }
   const limit = 20;
   const offset = Math.max(0, (parseInt(f.page, 10) || 1) - 1) * limit;
   const sortLatest = f.sort === 'latest' || !f.q;

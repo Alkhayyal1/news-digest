@@ -3,7 +3,6 @@ import { config } from './config.js';
 import { getSetting, J } from './db.js';
 import { scheduleStatus, lockInfo } from './runner.js';
 import { getBulletin, eventSnapshot } from './bulletin.js';
-import { analyzeCompany } from './core/finance.js';
 import { aiAvailable } from './ai.js';
 
 export function publicSources(db) {
@@ -40,29 +39,6 @@ export function eventDetail(db, id) {
       FROM items i JOIN sources s ON s.id = i.source_id WHERE i.event_id = ? AND i.excluded = 0 ORDER BY COALESCE(i.published_at, i.fetched_at)`).all(id);
   const bulletins = db.prepare('SELECT b.id, b.title, b.created_at, bi.kind FROM bulletin_items bi JOIN bulletins b ON b.id = bi.bulletin_id WHERE bi.event_id = ? ORDER BY b.created_at').all(id);
   return { ...snap, hidden: !!e.hidden, merged_into: e.merged_into, timeline, bulletins };
-}
-
-export function companiesList(db) {
-  return db.prepare(`SELECT c.symbol, c.name, c.sector, (SELECT COUNT(*) FROM financial_reports f WHERE f.symbol = c.symbol) AS reports,
-      (SELECT COUNT(*) FROM event_entities x JOIN events e ON e.id = x.event_id WHERE x.symbol = c.symbol AND e.hidden = 0) AS events FROM companies c ORDER BY c.sector, c.symbol`).all();
-}
-
-export function companyDetail(db, symbol) {
-  const co = db.prepare('SELECT * FROM companies WHERE symbol = ?').get(symbol);
-  if (!co) return null;
-  const reports = db.prepare('SELECT * FROM financial_reports WHERE symbol = ? ORDER BY period DESC').all(symbol);
-  const price = db.prepare('SELECT * FROM prices WHERE symbol = ? ORDER BY as_of DESC LIMIT 1').get(symbol) || null;
-  const peers = db.prepare('SELECT symbol FROM companies WHERE sector = ? AND symbol != ?').all(co.sector, symbol).map((p) => {
-    const r = db.prepare('SELECT * FROM financial_reports WHERE symbol = ?').all(p.symbol);
-    const pr = db.prepare('SELECT * FROM prices WHERE symbol = ? ORDER BY as_of DESC LIMIT 1').get(p.symbol) || null;
-    if (!r.length) return null;
-    const a = analyzeCompany(r, pr);
-    return { symbol: p.symbol, pe_ttm: a.valuation?.pe_ttm ?? null, net_margin_pct: a.metrics?.net_margin_pct ?? null };
-  }).filter(Boolean);
-  const analysis = analyzeCompany(reports, price, { sectorPeers: peers });
-  const events = db.prepare(`SELECT e.id, e.title, e.section, e.occurred_at, e.first_seen_at FROM events e JOIN event_entities x ON x.event_id = e.id
-      WHERE x.symbol = ? AND e.hidden = 0 ORDER BY e.last_update_at DESC LIMIT 30`).all(symbol);
-  return { company: { ...co, aliases: J(co.aliases_json, []) }, reports, price, analysis, events };
 }
 
 export function latestBulletin(db) {

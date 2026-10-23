@@ -6,7 +6,7 @@ import { config } from './config.js';
 import { openDb, syncSources, setSetting } from './db.js';
 import { tick, runUpdate, recoverAfterRestart, getAnchor, intervalMs, lastDoneSlot } from './runner.js';
 import { slotIndexAt } from './core/schedule.js';
-import { applyOverrides, applyFinancials } from './config-files.js';
+import { applyOverrides } from './config-files.js';
 import { prune, compact } from './maintenance.js';
 import { buildSite } from './static/build.js';
 
@@ -21,7 +21,7 @@ async function update(force) {
     // each Actions job is a fresh process: a "running" run here was interrupted
     recoverAfterRestart(db);
     syncSources(db);
-    const notes = [...applyOverrides(db), ...applyFinancials(db)];
+    const notes = applyOverrides(db);
     if (notes.length) setSetting(db, 'config_log', JSON.stringify({ at: Date.now(), notes }));
     for (const n of notes) console.log('[config]', n);
     let ran = false;

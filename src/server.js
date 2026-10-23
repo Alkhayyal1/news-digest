@@ -7,7 +7,7 @@ import { config, assertProductionConfig } from './config.js';
 import { openDb, J } from './db.js';
 import { runUpdate, tick, startScheduler, lockInfo, recoverAfterRestart } from './runner.js';
 import { getBulletin } from './bulletin.js';
-import { status, publicSources, eventDetail, companyDetail, companiesList, latestBulletin, bulletinList, adminOverview } from './views.js';
+import { status, publicSources, eventDetail, latestBulletin, bulletinList, adminOverview } from './views.js';
 import { searchEvents } from './search.js';
 import { splitItem, mergeEvents, dismissReview } from './admin.js';
 import { SECTIONS } from './core/lexicon.js';
@@ -82,7 +82,6 @@ const loginAttempts = new Map();
 const manualByIp = new Map();
 const clientIp = (req) => String(req.headers['fly-client-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 
-const num = (v) => (v === '' || v === null || v === undefined ? null : Number.isFinite(Number(v)) ? Number(v) : NaN);
 
 export function createApp(db, { fetchImpl } = {}) {
   const routes = [];
@@ -96,8 +95,6 @@ export function createApp(db, { fetchImpl } = {}) {
   route('GET', '/api/bulletins/:id', (req, p) => getBulletin(db, +p.id) || Promise.reject(new HttpError(404, 'النشرة غير موجودة')));
   route('GET', '/api/events/:id', (req, p) => eventDetail(db, +p.id) || Promise.reject(new HttpError(404, 'الخبر غير موجود')));
   route('GET', '/api/search', (req, p, q) => searchEvents(db, Object.fromEntries(q)));
-  route('GET', '/api/companies', () => companiesList(db));
-  route('GET', '/api/companies/:symbol', (req, p) => companyDetail(db, p.symbol) || Promise.reject(new HttpError(404, 'الشركة غير موجودة')));
 
   // Public manual refresh: rate-limited, and refused while another run holds the lock.
   route('POST', '/api/refresh', (req) => {
@@ -195,33 +192,6 @@ export function createApp(db, { fetchImpl } = {}) {
   route('POST', '/api/admin/events/:id/hide', async (req, p) => {
     const b = await readJson(req);
     db.prepare('UPDATE events SET hidden = ? WHERE id = ? AND merged_into IS NULL').run(b.hidden ? 1 : 0, +p.id);
-    return { ok: true };
-  }, { admin: true });
-  route('POST', '/api/admin/financials', async (req) => {
-    const b = await readJson(req);
-    if (!db.prepare('SELECT 1 FROM companies WHERE symbol = ?').get(String(b.symbol))) throw new HttpError(400, 'رمز غير معروف');
-    if (!/^\d{4}-(Q[1-4]|H[12]|FY)$/.test(String(b.period))) throw new HttpError(400, 'الفترة بصيغة 2026-Q2 أو 2026-FY');
-    const src = canonicalizeUrl(b.source_url);
-    if (!src) throw new HttpError(400, 'رابط الإفصاح الأصلي مطلوب');
-    const fields = ['revenue', 'gross_profit', 'operating_profit', 'net_profit', 'non_recurring', 'total_debt', 'cash', 'equity', 'operating_cash_flow', 'capex', 'dps', 'shares_outstanding'];
-    const vals = fields.map((f) => num(b[f]));
-    if (vals.some((v) => Number.isNaN(v))) throw new HttpError(400, 'قيمة رقمية غير صالحة');
-    db.prepare(`INSERT INTO financial_reports (symbol, period, period_end, currency, unit, ${fields.join(', ')}, source_url, disclosed_at, notes, created_at)
-      VALUES (?, ?, ?, 'SAR', 'million', ${fields.map(() => '?').join(', ')}, ?, ?, ?, ?)
-      ON CONFLICT(symbol, period) DO UPDATE SET ${fields.map((f) => `${f} = excluded.${f}`).join(', ')}, period_end = excluded.period_end, source_url = excluded.source_url, disclosed_at = excluded.disclosed_at, notes = excluded.notes`).run(
-      String(b.symbol), String(b.period), b.period_end || null, ...vals, src, b.disclosed_at || null, b.notes ? String(b.notes).slice(0, 500) : null, Date.now());
-    return { ok: true };
-  }, { admin: true });
-  route('POST', '/api/admin/prices', async (req) => {
-    const b = await readJson(req);
-    const price = num(b.price);
-    if (!db.prepare('SELECT 1 FROM companies WHERE symbol = ?').get(String(b.symbol))) throw new HttpError(400, 'رمز غير معروف');
-    if (!(price > 0)) throw new HttpError(400, 'سعر غير صالح');
-    if (!/^\d{4}-\d{2}-\d{2}/.test(String(b.as_of))) throw new HttpError(400, 'تاريخ السعر مطلوب بصيغة YYYY-MM-DD');
-    const src = canonicalizeUrl(b.source_url);
-    if (!src) throw new HttpError(400, 'رابط مصدر السعر مطلوب');
-    db.prepare('INSERT INTO prices (symbol, price, as_of, source_url, note) VALUES (?, ?, ?, ?, ?) ON CONFLICT(symbol, as_of) DO UPDATE SET price = excluded.price, source_url = excluded.source_url, note = excluded.note').run(
-      String(b.symbol), price, String(b.as_of).slice(0, 16), src, b.note ? String(b.note).slice(0, 200) : 'سعر إغلاق (ليس لحظيًا)');
     return { ok: true };
   }, { admin: true });
 
