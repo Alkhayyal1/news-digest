@@ -7,6 +7,7 @@ import { freshDb, addSource, rss, fakeFetch, H } from './helpers.js';
 import { openDb, setSetting } from '../src/db.js';
 import { tick, runUpdate, getAnchor, recoverAfterRestart } from '../src/runner.js';
 import { duePlan, slotTime, SEVEN_HOURS } from '../src/core/schedule.js';
+import { config } from '../src/config.js';
 
 const ANCHOR = Date.parse('2026-10-22T20:00:00+03:00'); // 8 pm Riyadh
 
@@ -109,4 +110,30 @@ test('failed run is retried with backoff and does not replace the last good bull
   const r2 = await tick(db, { now: () => clock, fetchImpl });
   assert.equal(r2.action, 'ran');
   assert.equal(db.prepare('SELECT status, attempts FROM schedule_slots WHERE slot_index = 1').get().status, 'done');
+});
+
+test('switching to fixed daily times (07:00 and 19:00 Riyadh) causes no off-schedule run', async () => {
+  const db = freshDb();
+  addSource(db, 'a', { url: 'https://a.test/feed' });
+  setSetting(db, 'schedule_anchor', String(ANCHOR));
+  let clock = ANCHOR + 60_000;
+  const fetchImpl = fakeFetch(() => feedFor(clock));
+  await tick(db, { now: () => clock, fetchImpl });
+  const saved = { anchor: config.scheduleAnchor, hours: config.intervalHours };
+  config.scheduleAnchor = '2026-10-28T07:00:00+03:00';
+  config.intervalHours = 12;
+  try {
+    clock = Date.parse('2026-10-28T16:00:00+03:00');
+    assert.equal((await tick(db, { now: () => clock, fetchImpl })).action, 'idle', 'the switch itself does not run an update');
+    assert.equal(getAnchor(db, clock), Date.parse('2026-10-28T07:00:00+03:00'));
+    clock = Date.parse('2026-10-28T19:01:00+03:00');
+    assert.equal((await tick(db, { now: () => clock, fetchImpl })).action, 'ran', '19:00 bulletin');
+    clock = Date.parse('2026-10-29T06:59:00+03:00');
+    assert.equal((await tick(db, { now: () => clock, fetchImpl })).action, 'idle');
+    clock = Date.parse('2026-10-29T07:02:00+03:00');
+    assert.equal((await tick(db, { now: () => clock, fetchImpl })).action, 'ran', '07:00 bulletin');
+  } finally {
+    config.scheduleAnchor = saved.anchor;
+    config.intervalHours = saved.hours;
+  }
 });
