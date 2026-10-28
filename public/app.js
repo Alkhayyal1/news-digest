@@ -96,6 +96,8 @@ function card(s, { highlight = null, kind = 'new', laterUpdates = 0 } = {}) {
   const type = kind === 'update' ? 'update' : s.content_type;
   const others = (s.sources || []).slice(1);
   const lastUpdate = (s.updates || []).slice(-1)[0];
+  // an update card leads with the new development, not the headline readers already saw
+  const headline = kind === 'update' && lastUpdate?.title ? lastUpdate.title : s.title;
   const ver = NOTABLE_VERIFY[s.verification];
   const tags = (s.tags || []).filter((t) => !(s.entities || []).some((e) => e.label === t)).slice(0, 4);
   return `<article class="card" id="ev-${s.id}" data-sec="${esc(s.section)}">
@@ -108,8 +110,8 @@ function card(s, { highlight = null, kind = 'new', laterUpdates = 0 } = {}) {
       ${s.research_note ? `<span class="badge ver-preliminary">${esc(RESEARCH[s.research_note] || '')}</span>` : ''}
       ${limited && !isArabic(s.title) ? '<span class="badge limited">بلغة المصدر</span>' : ''}
     </div>
-    <h4><a href="#/event/${s.id}" ${isArabic(s.title) ? '' : 'dir="auto"'}>${esc(s.title)}</a></h4>
-    ${kind === 'update' && lastUpdate ? `<div class="changed"><b>ما الذي تغيّر:</b> ${esc(lastUpdate.changed)}</div>` : ''}
+    <h4><a href="#/event/${s.id}" ${isArabic(headline) ? '' : 'dir="auto"'}>${esc(headline)}</a></h4>
+    ${kind === 'update' && lastUpdate ? `<div class="changed"><b>ما الذي تغيّر:</b> ${esc(lastUpdate.changed)}<div class="sub">الخبر الأصلي: ${esc(s.title)}</div></div>` : ''}
     ${s.summary ? `<p class="summary" dir="auto">${limited ? '<span class="excerpt-tag">مقتطف:</span>' : ''}${esc(s.summary)}</p>` : ''}
     ${s.facts?.length ? `<ul class="facts">${s.facts.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
     ${s.why ? `<div class="why"><b>لماذا يهم؟</b> ${esc(s.why)} <span class="sub">(تقدير تحريري)</span></div>` : ''}
@@ -143,7 +145,7 @@ function renderBulletinBody(b) {
       <div class="hl-grid">${hl.map((x) => `<a class="hl-card" data-sec="${esc(x.section)}" href="#ev-${x.event_id}" data-jump="${x.event_id}">
         <div class="t" ${isArabic(x.snapshot?.title) ? '' : 'dir="auto"'}>${esc(x.snapshot?.title)}</div>
         <div class="m"><span class="badge hl-${esc(x.highlight)}">${esc(x.highlight)}</span><span>${esc(secName(x.section))}</span></div></a>`).join('')}</div>
-      <div class="hl-note">«عاجل» فقط لما وقع خلال 3 ساعات من صدور النشرة. النشرة تصدر كل 7 ساعات وليست تنبيهات لحظية.</div></section>`;
+      <div class="hl-note">«عاجل» فقط لما وقع خلال 3 ساعات من صدور النشرة. النشرة تصدر مرتين يوميًا (7 صباحًا و7 مساءً) وليست تنبيهات لحظية.</div></section>`;
   }
   const scopes = [['saudi', 'السعودية'], ['world', 'العالم']];
   const rail = scopes.map(([scope, label]) => `<div class="group"><div class="group-title">${label}</div><nav aria-label="أقسام ${label}">${SECTIONS.filter((s) => s.scope === scope).map((s) => {
