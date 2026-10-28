@@ -1,3 +1,12 @@
+# Free hosting mode: GitHub Actions is the scheduler + worker, a GitHub Release stores the
+# SQLite database between runs, and GitHub Pages serves the generated static site.
+#
+# The job runs hourly, but a news update only happens when the next fixed 7-hour slot
+# (anchor + k*7h, stored in the database) is due. Idle ticks change nothing.
+#
+# GitHub's own schedule is often hours late, so an external cron service also calls the
+# workflow_dispatch API every 10 minutes with force=false: that is just another tick, and
+# keeps updates within minutes of their slot.
 name: update
 
 on:
@@ -19,6 +28,7 @@ permissions:
   id-token: write
   actions: write
 
+# Never two updates at the same time (manual, scheduled and push runs queue up).
 concurrency:
   group: news-update
   cancel-in-progress: false
@@ -49,6 +59,8 @@ jobs:
       - name: Download database
         run: |
           mkdir -p data
+          # 404 = first run. Any other error must stop the job, or an empty database
+          # would overwrite the real one.
           if out=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/db" 2>&1); then
             gh release download db --pattern news.db.gz --dir data
             cp data/news.db.gz data/news-prev.db.gz
@@ -67,13 +79,15 @@ jobs:
       - name: Decide whether to publish
         id: decide
         run: |
-          if [ "${{ steps.tick.outputs.ran }}" = "true" ] || [ "${{ github.event_name }}" != "schedule" ]; then
+          # publish after a real update, a code push, or a manual forced run; idle ticks
+          # (hourly schedule or the external force=false trigger) leave everything as is
+          if [ "${{ steps.tick.outputs.ran }}" = "true" ] || [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name == 'workflow_dispatch' && inputs.force }}" = "true" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload database
+      - name: Upload database (keeps the previous copy for rollback)
         if: steps.decide.outputs.publish == 'true'
         run: |
           gzip -kf data/news.db
@@ -90,6 +104,8 @@ jobs:
         with:
           path: site
 
+      # Scheduled workflows are disabled after 60 days without repository activity;
+      # re-enabling through the API on each run keeps the schedule alive.
       - name: Keep schedule enabled
         continue-on-error: true
         run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/update.yml/enable"
