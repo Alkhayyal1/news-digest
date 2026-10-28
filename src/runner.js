@@ -6,7 +6,7 @@ import { getSetting, setSetting, tx } from './db.js';
 import { ingestAll } from './ingest.js';
 import { enrichPending } from './enrich.js';
 import { buildBulletin } from './bulletin.js';
-import { duePlan, retryDelayMs, slotTime } from './core/schedule.js';
+import { duePlan, retryDelayMs, slotTime, slotIndexAt } from './core/schedule.js';
 
 const LOCK = 'update';
 const LEASE_MS = 20 * 60_000;
@@ -74,10 +74,25 @@ export function recoverAfterRestart(db, now = Date.now()) {
   return r.changes;
 }
 
-// ---- Scheduler (fixed 7-hour interval from a persisted anchor) ----
+// ---- Scheduler (fixed interval from a persisted anchor) ----
 
 export function getAnchor(db, now = Date.now()) {
   let a = getSetting(db, 'schedule_anchor');
+  // A configured anchor/interval (e.g. fixed daily times: 07:00 every 12 h) replaces the stored
+  // grid when it changes. Slot bookkeeping is reset and the current slot is marked done, so the
+  // switch itself never starts an off-schedule run.
+  const configured = config.scheduleAnchor ? Date.parse(config.scheduleAnchor) : NaN;
+  const key = `${configured}|${config.intervalHours}`;
+  if (Number.isFinite(configured) && getSetting(db, 'schedule_key') !== key) {
+    a = String(configured);
+    tx(db, () => {
+      setSetting(db, 'schedule_anchor', a);
+      setSetting(db, 'schedule_key', key);
+      db.prepare('DELETE FROM schedule_slots').run();
+      const k = slotIndexAt(configured, intervalMs(), now);
+      if (k >= 0) db.prepare("INSERT INTO schedule_slots (slot_index, planned_at, status, attempts, updated_at) VALUES (?, ?, 'merged', 0, ?)").run(k, slotTime(configured, intervalMs(), k), now);
+    });
+  }
   if (!a) {
     const fromEnv = config.scheduleAnchor ? Date.parse(config.scheduleAnchor) : NaN;
     a = String(Number.isFinite(fromEnv) ? fromEnv : now);
