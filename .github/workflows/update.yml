@@ -2,7 +2,7 @@
 # SQLite database between runs, and GitHub Pages serves the generated static site.
 #
 # The job is scheduled every 10 minutes, but a news update only happens when the next fixed
-# 7-hour slot (anchor + k*7h, stored in the database) is due. Idle ticks change nothing.
+# slot (07:00 or 19:00 Riyadh) (anchor + k*7h, stored in the database) is due. Idle ticks change nothing.
 # GitHub drops many scheduled runs under load; frequent ticks keep updates close to their slot
 # without any external service or token. A workflow_dispatch with force=false is also a tick.
 name: update
@@ -42,7 +42,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       AI_MODEL: ${{ vars.AI_MODEL || 'claude-opus-5-5' }}
-      SCHEDULE_ANCHOR: ${{ vars.SCHEDULE_ANCHOR }}
+      # fixed daily bulletins: 07:00 and 19:00 Riyadh time (every 12 h from this anchor)
+      SCHEDULE_ANCHOR: '2026-10-28T07:00:00+03:00'
+      INTERVAL_HOURS: '12'
       SCHEDULER_ENABLED: 'true'
     steps:
       - uses: actions/checkout@v4
