@@ -48,3 +48,27 @@ test('stock-market sections are gone; market news is classified as Saudi economy
   const r = classify({ title: 'أرامكو السعودية تعلن صافي الربح للربع الثالث', summary: 'أعلنت أرامكو النتائج المالية للربع الثالث.' });
   assert.equal(r.section, 'sa_economy');
 });
+
+test('the ten added Saudi sections receive matching stories (Saudi scope only)', () => {
+  const saudi = SECTIONS.filter((s) => s.scope === 'saudi').map((s) => s.key);
+  assert.equal(saudi.length, 14);
+  for (const k of ['sa_law', 'sa_climate', 'sa_trade', 'sa_realestate', 'sa_education', 'sa_travel', 'sa_food', 'sa_culture', 'sa_cyber', 'sa_factcheck']) assert.ok(saudi.includes(k), k);
+  assert.ok(!SECTIONS.some((s) => s.scope === 'world' && s.key.startsWith('sa_')));
+  const cases = [
+    ['sa_law', 'نظام جديد لحماية المستهلك في السعودية يفرض غرامات على المتاجر', 'يلزم النظام المتاجر بسياسة الاسترجاع ويحمي البيانات الشخصية للمستهلكين.'],
+    ['sa_climate', 'الأرصاد: أمطار غزيرة وسيول على الرياض ومكة', 'حذر المركز الوطني للأرصاد من الأمطار والسيول وموجة غبار.'],
+    ['sa_trade', 'تأخر الشحن في الموانئ السعودية يرفع أسعار الواردات', 'أدت اضطرابات سلاسل الإمداد إلى نقص بعض السلع في المملكة.'],
+    ['sa_realestate', 'ارتفاع الإيجارات وأسعار المساكن في الرياض', 'سجلت الإيجارات السكنية ارتفاعًا مع توسع مترو الرياض والتخطيط العمراني.'],
+    ['sa_education', 'وزارة التعليم في السعودية تعلن منحًا جامعية للطلاب', 'تشمل المنح الابتعاث إلى الجامعات العالمية وتدريب المهارات.'],
+    ['sa_travel', 'السعودية تطلق تأشيرة سياحية جديدة وتزيد رحلات الطيران', 'تسهّل التأشيرة دخول السياح وتضيف الخطوط السعودية رحلات جديدة.'],
+    ['sa_food', 'ارتفاع أسعار الغذاء ودعم المزارعين في المملكة', 'تعمل الجهات على تعزيز الأمن الغذائي وزيادة إنتاج القمح والتمور.'],
+    ['sa_culture', 'انطلاق معرض الكتاب في الرياض بمشاركة الفنانين', 'يضم المعرض فعاليات للتراث والخط العربي والمسرح.'],
+    ['sa_cyber', 'تحذير من رسائل احتيالية لسرقة البيانات في السعودية', 'حذر الأمن السيبراني من روابط مشبوهة ومحاولات النصب والتصيد.'],
+    ['sa_factcheck', 'لا صحة لمقطع متداول عن إغلاق المدارس في الرياض', 'نفت الجهات الرسمية الشائعات المتداولة وأكدت أن المقطع مفبرك.'],
+  ];
+  for (const [section, title, summary] of cases) {
+    const c = classify({ title, summary });
+    assert.equal(c.scope, 'saudi', title);
+    assert.equal(c.section, section, title);
+  }
+});
