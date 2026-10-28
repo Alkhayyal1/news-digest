@@ -42,6 +42,16 @@
 [data-sec="sa_projects"] { --sec: #9a6a00; }
 [data-sec="sa_economy"] { --sec: #1d7a6e; }
 [data-sec="sa_local"] { --sec: #4f6b2a; }
+[data-sec="sa_law"] { --sec: #5b4a8a; }
+[data-sec="sa_climate"] { --sec: #2d7f9e; }
+[data-sec="sa_trade"] { --sec: #8a5a2b; }
+[data-sec="sa_realestate"] { --sec: #9b4d3a; }
+[data-sec="sa_education"] { --sec: #3a6fb0; }
+[data-sec="sa_travel"] { --sec: #1f8a8a; }
+[data-sec="sa_food"] { --sec: #6f8a1f; }
+[data-sec="sa_culture"] { --sec: #a8457a; }
+[data-sec="sa_cyber"] { --sec: #b3372d; }
+[data-sec="sa_factcheck"] { --sec: #6b6d72; }
 [data-sec="w_politics"] { --sec: #1f4f8a; }
 [data-sec="w_economy"] { --sec: #126b8a; }
 [data-sec="w_energy"] { --sec: #b4561a; }
