@@ -1,17 +1,15 @@
 # Free hosting mode: GitHub Actions is the scheduler + worker, a GitHub Release stores the
 # SQLite database between runs, and GitHub Pages serves the generated static site.
 #
-# The job runs hourly, but a news update only happens when the next fixed 7-hour slot
-# (anchor + k*7h, stored in the database) is due. Idle ticks change nothing.
-#
-# GitHub's own schedule is often hours late, so an external cron service also calls the
-# workflow_dispatch API every 10 minutes with force=false: that is just another tick, and
-# keeps updates within minutes of their slot.
+# The job is scheduled every 10 minutes, but a news update only happens when the next fixed
+# 7-hour slot (anchor + k*7h, stored in the database) is due. Idle ticks change nothing.
+# GitHub drops many scheduled runs under load; frequent ticks keep updates close to their slot
+# without any external service or token. A workflow_dispatch with force=false is also a tick.
 name: update
 
 on:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '7,17,27,37,47,57 * * * *'
   workflow_dispatch:
     inputs:
       force:
