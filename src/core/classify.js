@@ -81,6 +81,11 @@ const CATEGORY_HINTS = [
   [/(^| )(صحه|الصحه|علوم|science|health)( |$)/, { world: 'w_science' }],
   [/(^| )(طاقه|الطاقه|نفط|energy)( |$)/, { world: 'w_energy' }],
   [/(^| )(سياسه|السياسه|politics)( |$)/, { saudi: 'sa_politics', world: 'w_politics' }],
+  [/(^| )(ثقافه|ثقافي|الثقافه|فنون|ثقافه وفن)( |$)/, { saudi: 'sa_culture' }],
+  [/(^| )(بيئي|بيئه|البيئه|طقس)( |$)/, { saudi: 'sa_climate' }],
+  [/(^| )(تعليم|التعليم|تعليمي)( |$)/, { saudi: 'sa_education' }],
+  [/(^| )(سياحه|سياحي|سفر|طيران)( |$)/, { saudi: 'sa_travel' }],
+  [/(^| )(زراعه|زراعي)( |$)/, { saudi: 'sa_food' }],
 ];
 // Non-news sections (lifestyle, celebrities, society pages) are left out of bulletins.
 const SOFT_CATEGORIES = /(^| )(منوعات|يوميات الشرق|مشاهير|الناس|المراه|لايف ستايل|lifestyle|entertainment|celebrity)( |$)/;
