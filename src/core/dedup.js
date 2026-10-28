@@ -156,19 +156,14 @@ export function decide(n, e, { lastSubstantiveAt = null, union = e, w = ONE } = 
   if (!same && c.conflicts.length && c.titleSim >= 0.5 && c.textSim >= 0.4) same = true;
   if (!same) return r(c.score >= THRESHOLDS.review ? 'review' : 'different', c.score >= THRESHOLDS.review ? 'تشابه جزئي يحتاج مراجعة' : 'غير متشابه');
 
-  // Same story. Is it a substantive development?
-  const newNumbers = [...n.numbers].filter((x) => !union.numbers.has(x) && unitOf(x));
-  const newDecisions = [...n.decisions].filter((x) => !union.decisions.has(x));
+  // Same story. Is it a substantive development? Only a changed figure counts (e.g. an amount
+  // revised from 5 to 7 billion). Later rewrites that merely add wording such as "announced" or
+  // extra numbers are follow-up coverage of the same story and must not resurface it.
   const late = n.t && lastSubstantiveAt ? (n.t - lastSubstantiveAt) / HOUR >= THRESHOLDS.updateMinHours : false;
-  if (late && (c.conflicts.length || newDecisions.length || newNumbers.length >= 1)) {
-    const what = [];
-    if (c.conflicts.length) {
-      const units = new Set(c.conflicts.map(unitOf));
-      const before = [...union.numbers].filter((x) => units.has(unitOf(x)));
-      what.push(`رقم جديد: ${c.conflicts.map(readable).join('، ')} (سابقًا: ${before.map(readable).join('، ')})`);
-    } else if (newNumbers.length) what.push('أرقام جديدة: ' + newNumbers.map(readable).join('، '));
-    if (newDecisions.length) what.push('إعلان أو قرار جديد');
-    return { ...r('update', 'تطور جوهري'), changed: what.join(' — ') };
+  if (late && c.conflicts.length) {
+    const units = new Set(c.conflicts.map(unitOf));
+    const before = [...union.numbers].filter((x) => units.has(unitOf(x)));
+    return { ...r('update', 'تطور جوهري'), changed: `رقم جديد: ${c.conflicts.map(readable).join('، ')} (سابقًا: ${before.map(readable).join('، ')})` };
   }
   return r('same', c.titleSim >= 0.6 ? 'عنوان متقارب' : 'تشابه في المحتوى والكيانات');
 }
