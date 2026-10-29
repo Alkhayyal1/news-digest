@@ -23,20 +23,15 @@ async function renderStatus(el) {
   const failing = enabled.filter((x) => x.health === 'failing');
   const lr = s.lastRun;
   const failed = lr && lr.status === 'failed';
-  const refresh = s.static
-    ? (s.actionsUrl ? `<a class="btn ghost small" href="${esc(s.actionsUrl)}" target="_blank" rel="noopener" title="متاح لمالك المستودع: Run workflow">تحديث يدوي</a>` : '')
-    : `<button class="btn small" id="refresh" ${s.running ? 'disabled' : ''}>${s.running ? '<span class="spinner"></span> جارٍ التحديث' : 'تحديث الآن'}</button>`;
+  // one quiet line: the reader only needs to know when the next bulletin comes (details live on «المصادر»)
+  const refresh = s.static ? '' : `<button class="btn small" id="refresh" ${s.running ? 'disabled' : ''}>${s.running ? '<span class="spinner"></span> جارٍ التحديث' : 'تحديث الآن'}</button>`;
   el.innerHTML = `
-    <div class="dateline">${esc(todayLine())}</div>
-    <div class="statusline" role="status">
-      <span class="item"><span class="dot ${failed ? 'bad' : ''}"></span>آخر تحديث <b>${s.lastSuccessAt ? esc(ago(s.lastSuccessAt)) : 'لم يكتمل بعد'}</b></span>
-      ${s.schedulerEnabled ? `<span class="item" title="${esc(fmt(s.schedule.nextRunAt))}${s.static ? ' — عبر GitHub Actions وقد يتأخر حتى ساعة' : ''}">القادم <b>${esc(fmtTime(s.schedule.nextRunAt))}</b> <span class="sub">${esc(until(s.schedule.nextRunAt))}</span></span>` : '<span class="item">الجدولة معطلة</span>'}
-      <span class="item"><span class="dot ${failing.length ? 'warn' : ''}"></span><a href="#/sources" title="${failing.length ? 'متعطل: ' + esc(failing.map((f) => f.name).join('، ')) : 'لا أعطال'}">المصادر ${ok}/${enabled.length}</a></span>
-      ${s.aiMode === 'ai' ? '<span class="pill ok">ملخصات آلية</span>' : '<span class="pill warn">وضع محدود</span>'}
-      <span class="spacer"></span>
+    <div class="status-mini" role="status">
+      <span class="dot ${failed ? 'bad' : failing.length ? 'warn' : ''}"></span>
+      ${s.schedulerEnabled ? `<span title="${esc(fmt(s.schedule.nextRunAt))}">النشرة القادمة <b>${esc(fmtTime(s.schedule.nextRunAt))}</b> <span class="sub">(${esc(until(s.schedule.nextRunAt))})</span></span>` : '<span>الجدولة معطلة</span>'}
+      <a href="#/sources" title="${failing.length ? 'متعطل: ' + esc(failing.map((f) => f.name).join('، ')) : 'لا أعطال'}">${ok}/${enabled.length} مصدر</a>
       ${refresh}
     </div>
-    ${s.aiMode !== 'ai' ? '<details class="explain"><summary>ما معنى «وضع محدود»؟</summary><p>التلخيص الآلي غير مفعّل: العناوين تظهر بلغة المصدر، والنص مقتطف قصير منه، ولا يُعرض «لماذا يهم؟». الأخبار نفسها حقيقية ومرتبطة بمصادرها.</p></details>' : ''}
     ${failed ? `<div class="notice danger">فشل آخر تحديث (${esc(fmt(lr.started_at))}). تُعرض آخر نشرة سليمة.</div>` : ''}`;
   el.querySelector('#refresh')?.addEventListener('click', async (ev) => {
     const b = ev.currentTarget;
@@ -115,7 +110,7 @@ function card(s, { highlight = null, kind = 'new', laterUpdates = 0 } = {}) {
     ${s.summary ? `<p class="summary" dir="auto">${limited ? '<span class="excerpt-tag">مقتطف:</span>' : ''}${esc(s.summary)}</p>` : ''}
     ${s.facts?.length ? `<ul class="facts">${s.facts.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
     ${s.why ? `<div class="why"><b>لماذا يهم؟</b> ${esc(s.why)} <span class="sub">(تقدير تحريري)</span></div>` : ''}
-    ${s.section === 'w_science' ? `<div class="science">${s.research_note ? '' : 'لم يحدد المصدر طبيعة البحث. '}النتائج البحثية ليست توصيات علاجية.</div>` : ''}
+    ${s.section === 'w_science' || s.section === 'w_health' ? `<div class="science">${s.research_note ? '' : 'لم يحدد المصدر طبيعة البحث. '}النتائج البحثية ليست توصيات علاجية.</div>` : ''}
     ${tags.length ? `<div class="chips">${tags.map((t) => `<a class="chip" href="#/search?q=${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
     ${others.length ? `<details class="more"><summary>${others.length === 1 ? 'مصدر آخر غطّى الخبر' : `${others.length} مصادر أخرى غطّت الخبر`}</summary><ul>${others.map((o) => `<li><a href="${esc(o.url)}" target="_blank" rel="noopener noreferrer nofollow">${esc(o.source)}</a> — <span dir="auto">${esc(o.title)}</span> <span class="sub">(${esc(fmtS(o.published_at))})</span></li>`).join('')}</ul></details>` : ''}
     <div class="foot">
@@ -126,57 +121,119 @@ function card(s, { highlight = null, kind = 'new', laterUpdates = 0 } = {}) {
   </article>`;
 }
 
-const SHOW_PER_SECTION = 8;
-const cardOf = (it) => card(it.snapshot, { highlight: it.highlight, kind: it.kind, laterUpdates: it.later_updates });
+// ---------- bulletin layout: tabs → sections → compact rows ----------
+const SHOW_PER_SECTION = 5;
+const TABS = [
+  { key: 'top', path: '#/', name: 'الأهم' },
+  { key: 'trend', path: '#/trend', name: 'ترند' },
+  { key: 'saudi', path: '#/saudi', name: 'السعودية' },
+  { key: 'world', path: '#/world', name: 'العالم' },
+  { key: 'fields', path: '#/fields', name: 'المجالات' },
+];
+const GROUP_NAMES = { saudi: 'السعودية', world: 'العالم', fields: 'المجالات' };
+// Bulletins published before world politics was split by region: shown under «الشرق الأوسط» when the headline names the region.
+const MIDEAST = /(الشرق الأوسط|الخليج|غز[ةه]|فلسطين|الفلسطيني|إسرائيل|الإسرائيلي|إيران|الإيراني|طهران|لبنان|اللبناني|سوريا|السوري|العراق|العراقي|اليمن|اليمني|الحوثي|حماس|حزب الله|مصر|المصري|الأردن|الأردني|قطر|القطري|الإمارات|الإماراتي|الكويت|البحرين|عُ?مان|تركيا|التركي|السودان|ليبيا|تونس|الجزائر|المغرب|هرمز)/;
 
-function renderBulletinBody(b) {
+function sectionOf(it) {
+  // sections removed from the product (e.g. stocks) fall back to the economy section of their scope
+  if (it.section === 'w_politics' && MIDEAST.test(it.snapshot?.title || '')) return 'w_mideast';
+  if (SECTIONS.some((s) => s.key === it.section)) return it.section;
+  return it.section.startsWith('sa_') ? 'sa_economy' : 'w_economy';
+}
+// Arabic counted nouns: 1 خبر، 2 خبران، 3–10 أخبار، 11+ خبرًا
+const counted = (n, [one, two, few, many]) => (n === 1 ? one : n === 2 ? two : `${n} ${n >= 3 && n <= 10 ? few : many}`);
+const NEWS = ['خبر واحد', 'خبران', 'أخبار', 'خبرًا'];
+const SOURCES = ['مصدر واحد', 'مصدران', 'مصادر', 'مصدرًا'];
+const groupOf = (sec) => SECTIONS.find((s) => s.key === sec)?.group || (sec.startsWith('sa_') ? 'saudi' : 'world');
+const sourceCount = (s) => new Set((s?.sources || []).map((x) => x.source)).size;
+
+function row(it, { rank = null, showSection = false } = {}) {
+  const s = it.snapshot;
+  if (!s) return '';
+  const p = s.primary || {};
+  const lastUpdate = (s.updates || []).slice(-1)[0];
+  const headline = it.kind === 'update' && lastUpdate?.title ? lastUpdate.title : s.title;
+  const n = sourceCount(s);
+  const type = it.kind === 'update' ? 'update' : s.content_type;
+  return `<a class="row" href="#/event/${s.id}" data-sec="${esc(it.section)}">
+    ${rank ? `<span class="rank">${rank}</span>` : ''}
+    <span class="row-body">
+      <span class="row-t" ${isArabic(headline) ? '' : 'dir="auto"'}>${esc(headline)}</span>
+      ${it.kind === 'update' && lastUpdate ? `<span class="row-u">تحديث: ${esc(lastUpdate.changed)}</span>` : ''}
+      <span class="row-m">
+        ${it.highlight ? `<span class="badge hl-${esc(it.highlight)}">${esc(it.highlight)}</span>` : ''}
+        ${type !== 'news' ? `<span class="badge type-${esc(type)}">${esc(TYPE[type] || type)}</span>` : ''}
+        ${showSection ? `<span class="sec-tag">${esc(secName(it.section))}</span>` : ''}
+        <span class="src">${esc(p.source || '—')}</span><span>${esc(ago(p.published_at || s.first_seen_at))}</span>
+        ${n > 1 ? `<span class="n">${counted(n, SOURCES)}</span>` : ''}
+      </span>
+    </span>
+  </a>`;
+}
+
+function prepareItems(b) {
+  for (const it of b.items) it.section = sectionOf(it);
+  return b.items;
+}
+
+// ranked by independent coverage first: a story many outlets carry is what the day is about
+function topStories(items, limit = 10) {
+  const score = (it) => sourceCount(it.snapshot) * 3 + (it.snapshot?.importance || 0) + (it.highlight ? 2 : 0);
+  return [...items].sort((a, b) => score(b) - score(a)).slice(0, limit);
+}
+
+function sectionsHtml(items, group) {
   const bySection = new Map();
-  for (const it of b.items) {
-    // sections removed from the product (e.g. stocks) fall back to the economy section of their scope
-    const sec = SECTIONS.some((s) => s.key === it.section) ? it.section : it.section.startsWith('sa_') ? 'sa_economy' : 'w_economy';
-    it.section = sec;
-    if (!bySection.has(sec)) bySection.set(sec, []);
-    bySection.get(sec).push(it);
+  for (const it of items) {
+    if (!bySection.has(it.section)) bySection.set(it.section, []);
+    bySection.get(it.section).push(it);
   }
-  const hl = b.items.filter((x) => x.highlight);
-  let html = '';
-  if (hl.length) {
-    html += `<section class="highlights" aria-label="العاجل والمهم"><div class="label">العاجل والمهم</div>
-      <div class="hl-grid">${hl.map((x) => `<a class="hl-card" data-sec="${esc(x.section)}" href="#ev-${x.event_id}" data-jump="${x.event_id}">
-        <div class="t" ${isArabic(x.snapshot?.title) ? '' : 'dir="auto"'}>${esc(x.snapshot?.title)}</div>
-        <div class="m"><span class="badge hl-${esc(x.highlight)}">${esc(x.highlight)}</span><span>${esc(secName(x.section))}</span></div></a>`).join('')}</div>
-      <div class="hl-note">«عاجل» فقط لما وقع خلال 3 ساعات من صدور النشرة. النشرة تصدر مرتين يوميًا (7 صباحًا و7 مساءً) وليست تنبيهات لحظية.</div></section>`;
+  const secs = SECTIONS.filter((s) => s.group === group && bySection.has(s.key));
+  if (!secs.length) return '<div class="empty-scope">لا جديد هنا في هذه النشرة.</div>';
+  const index = `<nav class="sec-index" aria-label="أقسام ${esc(GROUP_NAMES[group])}">${secs.map((s) => `<a href="#sec-${s.key}" data-jump-sec="${s.key}" data-sec="${s.key}">${esc(s.name)} <span class="c">${bySection.get(s.key).length}</span></a>`).join('')}</nav>`;
+  return index + secs.map((s) => {
+    const list = bySection.get(s.key).sort((a, b) => sourceCount(b.snapshot) - sourceCount(a.snapshot) || (b.snapshot?.importance || 0) - (a.snapshot?.importance || 0));
+    const hint = s.key === 'sa_economy' || s.key === 'w_economy' ? 'الأرقام والأسعار تخص وقت نشر المصدر وليست لحظية.' : s.hint && s.group === 'fields' ? s.hint : '';
+    return `<section class="section" id="sec-${s.key}" data-sec="${s.key}">
+      <div class="section-head"><h3>${esc(s.name)}</h3><span class="n">${list.length}</span></div>
+      ${hint ? `<div class="hint">${esc(hint)}</div>` : ''}
+      <div class="rows">${list.slice(0, SHOW_PER_SECTION).map((it) => row(it)).join('')}</div>
+      ${list.length > SHOW_PER_SECTION ? `<details class="more-sec"><summary>عرض الكل (${list.length})</summary><div class="rows">${list.slice(SHOW_PER_SECTION).map((it) => row(it)).join('')}</div></details>` : ''}
+    </section>`;
+  }).join('');
+}
+
+function trendsHtml(trends, { full = false } = {}) {
+  if (!trends?.length) return '<div class="empty-scope">لا توجد مواضيع تتناولها عدة مصادر في آخر 24 ساعة.</div>';
+  if (!full) return `<div class="trend-chips">${trends.slice(0, 8).map((t, i) => `<a class="trend-chip" href="#/trend?t=${i}"><b>${esc(t.label)}</b><span>${counted(t.events, NEWS)}</span></a>`).join('')}</div>`;
+  return trends.map((t, i) => `<section class="trend" id="trend-${i}">
+    <div class="trend-head"><span class="rank">${i + 1}</span><h3>${esc(t.label)}</h3><span class="n">${counted(t.events, NEWS)} من ${counted(t.sources, SOURCES)}</span></div>
+    <div class="rows">${t.items.map((x) => `<a class="row" href="#/event/${x.id}" data-sec="${esc(x.section)}"><span class="row-body"><span class="row-t" dir="auto">${esc(x.title)}</span>
+      <span class="row-m"><span class="sec-tag">${esc(secName(x.section))}</span>${x.n > 1 ? `<span class="n">${counted(x.n, SOURCES)}</span>` : ''}</span></span></a>`).join('')}</div>
+  </section>`).join('');
+}
+
+function tabsBar(active, items) {
+  const count = (g) => items.filter((it) => groupOf(it.section) === g).length;
+  return `<nav class="tabs" aria-label="أقسام النشرة">${TABS.map((t) => `<a href="${t.path}" class="${t.key === active ? 'on' : ''}">${t.name}${GROUP_NAMES[t.key] ? ` <span class="c">${count(t.key)}</span>` : ''}</a>`).join('')}</nav>`;
+}
+
+function tabHtml(tab, items, trends) {
+  if (tab === 'trend') {
+    return `<h2 class="tab-title">ترند عالمي</h2><p class="sub">المواضيع التي تناولتها عدة مصادر مستقلة خلال آخر 24 ساعة، مرتبة حسب عدد المصادر.</p>${trendsHtml(trends, { full: true })}`;
   }
-  const scopes = [['saudi', 'السعودية'], ['world', 'العالم']];
-  const rail = scopes.map(([scope, label]) => `<div class="group"><div class="group-title">${label}</div><nav aria-label="أقسام ${label}">${SECTIONS.filter((s) => s.scope === scope).map((s) => {
-    const n = bySection.get(s.key)?.length || 0;
-    return `<a href="#sec-${s.key}" data-jump-sec="${s.key}" data-sec="${s.key}" class="${n ? '' : 'empty'}">${esc(s.name)} <span class="c">${n}</span></a>`;
-  }).join('')}</nav></div>`).join('');
-  let content = '';
-  for (const [scope, label] of scopes) {
-    const secs = SECTIONS.filter((s) => s.scope === scope);
-    const total = secs.reduce((n, s) => n + (bySection.get(s.key)?.length || 0), 0);
-    content += `<section class="scope"><h2 class="scope-title">${label} <span class="n">${total} حدث</span></h2>`;
-    if (!total) content += '<div class="empty-scope">لا جديد في هذا النطاق ضمن هذه النشرة.</div>';
-    for (const s of secs) {
-      const items = bySection.get(s.key) || [];
-      // empty sections stay reachable from the rail but take no space in the page
-      if (!items.length) {
-        content += `<span id="sec-${s.key}"></span>`;
-        continue;
-      }
-      const hint = s.key === 'sa_economy' || s.key === 'w_economy' ? 'الأرقام والأسعار في الأخبار تخص وقت نشر المصدر وليست لحظية، ولا تُنسب أسباب لحركة الأسواق إلا إذا ذكرها المصدر.' : '';
-      content += `<section class="section" id="sec-${s.key}" data-sec="${s.key}">
-        <div class="section-head"><h3>${esc(s.name)}</h3><span class="n">${items.length}</span></div>
-        ${hint ? `<div class="hint">${esc(hint)}</div>` : ''}
-        <div class="cards">${items.slice(0, SHOW_PER_SECTION).map(cardOf).join('')}</div>
-        ${items.length > SHOW_PER_SECTION ? `<details class="more-sec"><summary>عرض ${items.length - SHOW_PER_SECTION} خبرًا آخر في هذا القسم</summary><div class="cards">${items.slice(SHOW_PER_SECTION).map(cardOf).join('')}</div></details>` : ''}
-      </section>`;
-    }
-    content += '</section>';
+  if (tab === 'top') {
+    const tiles = Object.keys(GROUP_NAMES).map((g) => {
+      const secs = SECTIONS.filter((s) => s.group === g).map((s) => [s, items.filter((it) => it.section === s.key).length]).filter(([, n]) => n);
+      return secs.length ? `<div class="tiles-group"><div class="tiles-title">${GROUP_NAMES[g]}</div><div class="tiles">${secs.map(([s, n]) => `<a class="tile" data-sec="${s.key}" href="#/${g}?sec=${s.key}">${esc(s.name)}<span>${n}</span></a>`).join('')}</div></div>` : '';
+    }).join('');
+    return `<h2 class="tab-title">الأهم الآن</h2>
+      <div class="rows ranked">${topStories(items).map((it, i) => row(it, { rank: i + 1, showSection: true })).join('')}</div>
+      <div class="block-head"><h2 class="tab-title">ترند عالمي</h2><a href="#/trend">عرض الكل ←</a></div>
+      ${trendsHtml(trends)}
+      <h2 class="tab-title">تصفّح الأقسام</h2>${tiles}`;
   }
-  html += `<div class="layout"><aside class="rail">${rail}</aside><div class="content">${content}</div></div>`;
-  return html;
+  return sectionsHtml(items.filter((it) => groupOf(it.section) === tab), tab);
 }
 
 function bulletinHead(b, kicker) {
@@ -187,32 +244,35 @@ function bulletinHead(b, kicker) {
 
 function wireJumps() {
   // in-page anchors must not change the hash router
-  app.querySelectorAll('[data-jump], [data-jump-sec]').forEach((a) => a.addEventListener('click', (e) => {
+  app.querySelectorAll('[data-jump-sec]').forEach((a) => a.addEventListener('click', (e) => {
     e.preventDefault();
-    const id = a.dataset.jump ? `ev-${a.dataset.jump}` : `sec-${a.dataset.jumpSec}`;
-    const el = document.getElementById(id);
-    const folded = el?.closest('details');
-    if (folded) folded.open = true;
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    jumpTo(`sec-${a.dataset.jumpSec}`);
   }));
+}
+function jumpTo(id, smooth = true) {
+  const el = document.getElementById(id);
+  el?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+  return !!el;
 }
 
 // ---------- pages ----------
-async function pageHome() {
+async function pageHome(tab = 'top') {
   setNav('home');
   app.innerHTML = '<div id="status"></div><div id="body"><p class="sub">جارٍ التحميل…</p></div>';
   // awaited at the end so the status strip's height is in place before the reading place is restored
   const statusDone = renderStatus(document.getElementById('status'));
-  const { bulletin, newerEmpty } = await api('/api/bulletins/latest');
+  const { bulletin, newerEmpty, trends } = await api('/api/bulletins/latest');
   const body = document.getElementById('body');
   if (!bulletin) {
     body.innerHTML = '<div class="notice info">لم تُنشر أي نشرة بعد. سيبدأ الخادم أول تحديث تلقائيًا، أو اضغط «تحديث الآن».</div>';
     return;
   }
+  const items = prepareItems(bulletin);
   body.innerHTML = `${bulletinHead(bulletin, 'آخر نشرة')}
     ${newerEmpty ? `<div class="notice info">آخر تحديث (${esc(fmt(newerEmpty.created_at))}) لم يجد أخبارًا جديدة مهمة، لذلك تبقى هذه النشرة معروضة. لا نعيد تدوير الأخبار القديمة.</div>` : ''}
     ${bulletin.note ? `<div class="notice warn">${esc(bulletin.note)}</div>` : ''}
-    ${renderBulletinBody(bulletin)}`;
+    ${tabsBar(tab, items)}
+    <div class="tab-body">${tabHtml(tab, items, trends)}</div>`;
   wireJumps();
   await statusDone;
 }
@@ -220,11 +280,15 @@ async function pageHome() {
 async function pageBulletin(id) {
   setNav('archive');
   const b = await api(`/api/bulletins/${encodeURIComponent(id)}`);
+  const items = prepareItems(b);
   app.innerHTML = `${bulletinHead(b, 'من الأرشيف')}
     <div class="sub">تُعرض العناصر كما ظهرت وقت النشر، والتطورات اللاحقة تظهر كروابط.</div>
     ${b.status === 'empty' ? `<div class="notice info">${esc(b.note || 'لا أخبار جديدة')}</div>` : ''}
     ${b.note && b.status !== 'empty' ? `<div class="notice warn">${esc(b.note)}</div>` : ''}
-    ${renderBulletinBody(b)}`;
+    ${Object.entries(GROUP_NAMES).map(([g, label]) => {
+      const list = items.filter((it) => groupOf(it.section) === g);
+      return list.length ? `<section class="scope"><h2 class="scope-title">${label} <span class="n">${list.length} حدث</span></h2>${sectionsHtml(list, g)}</section>` : '';
+    }).join('')}`;
   wireJumps();
 }
 
@@ -320,6 +384,7 @@ async function pageSources() {
   const s = await api('/api/status');
   app.innerHTML = `<h1 class="page">المصادر وحالة التغطية</h1>
     <p class="sub">المصادر الرسمية مقدّمة. «معطّل» يعني أن المصدر غير متاح للجلب الآلي حاليًا (السبب مذكور)، وليس أنه غير موثوق.</p>
+    ${s.aiMode !== 'ai' ? '<div class="notice warn">التلخيص الآلي غير مفعّل: النص المعروض مع كل خبر مقتطف قصير من المصدر نفسه. الأخبار حقيقية ومرتبطة بمصادرها.</div>' : ''}
     <div class="table-wrap"><table class="data"><thead><tr><th>المصدر</th><th>النوع</th><th>الحالة</th><th>آخر نجاح</th><th>ملاحظات / آخر خطأ</th></tr></thead><tbody>
     ${s.sources.map((x) => `<tr><td><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.name)}</a>${x.is_official ? ' <span class="badge ver-official">رسمي</span>' : ''}</td>
       <td>${esc(x.type === 'rss' ? 'RSS' : x.type === 'spa' ? 'صفحة عامة' : 'قائمة HTML')}</td>
@@ -341,7 +406,8 @@ async function route() {
   const parts = path.split('/').filter(Boolean);
   try {
     if (!SECTIONS.length) SECTIONS = await api('/api/sections');
-    if (!parts.length) await pageHome();
+    if (!parts.length) await pageHome('top');
+    else if (TABS.some((t) => t.key === parts[0] && t.key !== 'top')) await pageHome(parts[0]);
     else if (parts[0] === 'archive') await pageArchive(params);
     else if (parts[0] === 'bulletin' && parts[1]) await pageBulletin(parts[1]);
     else if (parts[0] === 'event' && parts[1]) await pageEvent(parts[1]);
@@ -359,26 +425,37 @@ async function route() {
 // so going back from a news item returns to the same spot instead of the top of the bulletin.
 // A newly opened page has no saved place and starts at the top.
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-// The latest bulletin also keeps its place when reopened from the menu (not only via Back), since
-// the installed phone app has no Back button.
+// Each tab of the latest bulletin also keeps its place when reopened from the menu or the tab bar
+// (not only via Back), since the installed phone app has no Back button.
 // The saved place belongs to one bulletin: once a new bulletin is out, it opens from the top.
-const isHome = () => (location.hash || '#/') === '#/';
+const homeTab = () => {
+  const path = (location.hash || '#/').split('?')[0];
+  return path === '#/' || TABS.some((t) => t.path === path) ? path : null;
+};
 const homeBulletin = () => app.querySelector('a[href^="#/bulletin/"]')?.getAttribute('href') || '';
 function saveReadingPlace() {
   const open = [...app.querySelectorAll('details')].flatMap((d, i) => (d.open ? [i] : []));
   const place = { y: window.scrollY, open };
   history.replaceState({ ...(history.state || {}), ...place }, '');
-  if (isHome()) try { sessionStorage.setItem('homePlace', JSON.stringify({ ...place, bulletin: homeBulletin() })); } catch {}
+  const tab = homeTab();
+  if (tab) try { sessionStorage.setItem('place:' + tab, JSON.stringify({ ...place, bulletin: homeBulletin() })); } catch {}
 }
 function restoreReadingPlace() {
   let s = history.state;
-  if ((!s || s.y == null) && isHome()) {
+  const tab = homeTab();
+  if ((!s || s.y == null) && tab) {
     try {
-      const saved = JSON.parse(sessionStorage.getItem('homePlace'));
+      const saved = JSON.parse(sessionStorage.getItem('place:' + tab));
       if (saved && saved.bulletin === homeBulletin()) s = saved;
     } catch {}
   }
-  if (!s || s.y == null) return window.scrollTo(0, 0);
+  if (!s || s.y == null) {
+    // a tile or trend chip asks for a specific section
+    const q = new URLSearchParams((location.hash.split('?')[1]) || '');
+    if (q.get('sec') && jumpTo('sec-' + q.get('sec'), false)) return;
+    if (q.get('t') && jumpTo('trend-' + q.get('t'), false)) return;
+    return window.scrollTo(0, 0);
+  }
   const all = app.querySelectorAll('details');
   for (const i of s.open || []) if (all[i]) all[i].open = true;
   window.scrollTo(0, s.y);
