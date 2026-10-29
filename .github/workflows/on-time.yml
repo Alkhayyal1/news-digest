@@ -1,0 +1,45 @@
+# Free, in-GitHub timer for on-time bulletins. GitHub's schedule event is best-effort and often
+# hours late, so whenever an update run finishes (or this is started by hand) this job looks at
+# the next bulletin time: 07:00 / 19:00 Riyadh = 04:00 / 16:00 UTC (keep in sync with
+# SCHEDULE_ANCHOR in update.yml). If it is under ~5.5 hours away it sleeps until then and starts
+# an update tick; otherwise it exits at once and a later run waits for it.
+name: on-time
+
+on:
+  workflow_run:
+    workflows: [update]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+# One waiter at a time; a newer one replaces an older one (they target the same time).
+concurrency:
+  group: on-time-waiter
+  cancel-in-progress: true
+
+jobs:
+  wait:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Sleep until the next bulletin time, then start the update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          now=$(date -u +%s)
+          next=""
+          for t in "today 04:00" "today 16:00" "tomorrow 04:00" "tomorrow 16:00"; do
+            s=$(date -u -d "$t" +%s)
+            if [ "$s" -gt "$now" ]; then next=$s; break; fi
+          done
+          wait=$(( next - now + 60 ))
+          echo "Next bulletin at $(date -u -d "@$next") (UTC), in $wait s"
+          if [ "$wait" -gt 19800 ]; then
+            echo "More than 5.5 hours away: a later run will wait for it."
+            exit 0
+          fi
+          sleep "$wait"
+          gh workflow run update.yml --repo "$GITHUB_REPOSITORY" -f force=false
