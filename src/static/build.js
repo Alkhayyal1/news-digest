@@ -10,7 +10,8 @@ import { J } from '../db.js';
 import { status, publicSources, eventDetail, latestBulletin, bulletinList, adminOverview } from '../views.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PUBLIC_FILES = ['index.html', 'admin.html', 'styles.css', 'app.js', 'admin.js', 'common.js', 'theme.js', 'favicon.svg', 'static-search.js'];
+const PUBLIC_FILES = ['index.html', 'admin.html', 'styles.css', 'app.js', 'admin.js', 'common.js', 'theme.js', 'favicon.svg', 'static-search.js',
+  'manifest.webmanifest', 'sw.js', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 const EVENT_PAGES_DAYS = 120; // full event pages are published for recent events; older ones live in bulletins + search
 
 const riyadhMonth = (ms) => new Date(ms + 3 * 3600_000).toISOString().slice(0, 7);
