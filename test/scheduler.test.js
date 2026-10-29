@@ -117,7 +117,14 @@ test('switching to fixed daily times (07:00 and 19:00 Riyadh) causes no off-sche
   addSource(db, 'a', { url: 'https://a.test/feed' });
   setSetting(db, 'schedule_anchor', String(ANCHOR));
   let clock = ANCHOR + 60_000;
-  const fetchImpl = fakeFetch(() => feedFor(clock));
+  // a different story each run: near-identical headlines would (correctly) merge as one story
+  const stories = ['وزارة الصحة تطلق خدمة رقمية جديدة للمواعيد', 'هيئة الطيران المدني تعلن قواعد جديدة لحقوق المسافرين', 'وزارة التعليم تفتح باب القبول في برنامج الابتعاث',
+    'أمانة الرياض تفتتح حدائق عامة في أحياء الشمال', 'هيئة الغذاء والدواء تحذر من منتج تجميل مغشوش', 'وزارة الثقافة تطلق مهرجانا للفنون التراثية في الأحساء'];
+  let n = 0;
+  const fetchImpl = fakeFetch(() => {
+    const title = stories[n++ % stories.length];
+    return rss([{ title, link: `https://a.test/s/${n}`, published: clock - 10 * 60_000, summary: title }]);
+  });
   await tick(db, { now: () => clock, fetchImpl });
   // old 7-hour grid also ran slots 1 and 2: their bulletins must not block the new grid's slots
   for (const k of [1, 2]) {
