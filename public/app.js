@@ -253,7 +253,8 @@ async function pageEvent(id) {
     location.hash = `#/event/${e.merged_into}`;
     return;
   }
-  app.innerHTML = `<h1 class="page" dir="auto">${esc(e.title)}</h1>
+  app.innerHTML = `<button class="btn secondary small" id="back" type="button">→ رجوع</button>
+    <h1 class="page" dir="auto">${esc(e.title)}</h1>
     <div class="sub">رابط المشاركة: <span class="ltr">${esc(location.href.split('#')[0] + '#/event/' + e.id)}</span></div>
     ${card(e)}
     <h2>التسلسل الزمني والمصادر</h2>
@@ -265,6 +266,8 @@ async function pageEvent(id) {
     ${e.updates.length ? `<h2>التطورات الجوهرية</h2>${e.updates.map((u) => `<div class="notice info"><b>${esc(fmt(u.created_at))}:</b> ${esc(u.changed)}<div dir="auto" class="sub">${esc(u.title || '')}</div></div>`).join('')}` : ''}
     <h2>ظهر في النشرات</h2>
     ${e.bulletins.length ? e.bulletins.map((b) => `<div class="list-row"><a href="#/bulletin/${b.id}">${esc(b.title)}</a><span class="sub">${b.kind === 'update' ? 'كتحديث' : 'كخبر جديد'}</span></div>`).join('') : '<p class="sub">لم يُدرج في نشرة بعد (سيظهر في النشرة القادمة).</p>'}`;
+  // back to where the reader came from; a shared link opened directly goes to the latest bulletin
+  document.getElementById('back').addEventListener('click', () => (history.state?.fromApp ? history.back() : (location.hash = '#/')));
 }
 
 async function pageSearch(params) {
@@ -326,8 +329,12 @@ async function pageSources() {
 }
 
 // ---------- router ----------
+let firstRoute = true;
 async function route() {
   clearInterval(statusTimer);
+  // pages reached by moving inside the site are marked, so "رجوع" knows it can go back
+  if (!firstRoute && !history.state?.fromApp) history.replaceState({ ...(history.state || {}), fromApp: true }, '');
+  firstRoute = false;
   const h = location.hash || '#/';
   const [path, qs] = h.slice(1).split('?');
   const params = new URLSearchParams(qs || '');
@@ -352,12 +359,25 @@ async function route() {
 // so going back from a news item returns to the same spot instead of the top of the bulletin.
 // A newly opened page has no saved place and starts at the top.
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+// The latest bulletin also keeps its place when reopened from the menu (not only via Back), since
+// the installed phone app has no Back button.
+// The saved place belongs to one bulletin: once a new bulletin is out, it opens from the top.
+const isHome = () => (location.hash || '#/') === '#/';
+const homeBulletin = () => app.querySelector('a[href^="#/bulletin/"]')?.getAttribute('href') || '';
 function saveReadingPlace() {
   const open = [...app.querySelectorAll('details')].flatMap((d, i) => (d.open ? [i] : []));
-  history.replaceState({ ...(history.state || {}), y: window.scrollY, open }, '');
+  const place = { y: window.scrollY, open };
+  history.replaceState({ ...(history.state || {}), ...place }, '');
+  if (isHome()) try { sessionStorage.setItem('homePlace', JSON.stringify({ ...place, bulletin: homeBulletin() })); } catch {}
 }
 function restoreReadingPlace() {
-  const s = history.state;
+  let s = history.state;
+  if ((!s || s.y == null) && isHome()) {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('homePlace'));
+      if (saved && saved.bulletin === homeBulletin()) s = saved;
+    } catch {}
+  }
   if (!s || s.y == null) return window.scrollTo(0, 0);
   const all = app.querySelectorAll('details');
   for (const i of s.open || []) if (all[i]) all[i].open = true;
