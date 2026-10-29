@@ -4,6 +4,7 @@ import { parseFeed, parseSpaNextData, splitSpaPrefix } from '../src/core/feeds.j
 import { normalizeArabic, tokenize } from '../src/core/arabic.js';
 import { classify } from '../src/core/classify.js';
 import { SECTIONS } from '../src/core/lexicon.js';
+import { computeTrends } from '../src/core/trends.js';
 import { extractNumbers, stripHtml } from '../src/core/text.js';
 import { isDirectArticleUrl } from '../src/core/url.js';
 
@@ -51,7 +52,7 @@ test('stock-market sections are gone; market news is classified as Saudi economy
 
 test('the ten added Saudi sections receive matching stories (Saudi scope only)', () => {
   const saudi = SECTIONS.filter((s) => s.scope === 'saudi').map((s) => s.key);
-  assert.equal(saudi.length, 14);
+  assert.equal(saudi.length, 15);
   for (const k of ['sa_law', 'sa_climate', 'sa_trade', 'sa_realestate', 'sa_education', 'sa_travel', 'sa_food', 'sa_culture', 'sa_cyber', 'sa_factcheck']) assert.ok(saudi.includes(k), k);
   assert.ok(!SECTIONS.some((s) => s.scope === 'world' && s.key.startsWith('sa_')));
   const cases = [
@@ -69,6 +70,48 @@ test('the ten added Saudi sections receive matching stories (Saudi scope only)',
   for (const [section, title, summary] of cases) {
     const c = classify({ title, summary });
     assert.equal(c.scope, 'saudi', title);
+    assert.equal(c.section, section, title);
+  }
+});
+
+test('trends: a topic needs several stories from several sources; labels come from the headlines', () => {
+  const ev = (id, title, sources) => ({ id, title, section: 'w_ai', n: sources.length, sources, texts: [title] });
+  const trends = computeTrends([
+    ev(1, 'شركة تطلق نموذجًا جديدًا في الذكاء الاصطناعي', ['a', 'b']),
+    ev(2, 'قواعد أوروبية لتنظيم الذكاء الاصطناعي', ['c']),
+    ev(3, 'الذكاء الاصطناعي يغيّر سوق العمل', ['d']),
+    ev(4, 'زلزال قوي يضرب اليابان', ['a']),
+    ev(5, 'أسعار الذهب ترتفع', ['b']),
+  ]);
+  assert.equal(trends.length, 1);
+  assert.equal(trends[0].label, 'الذكاء الاصطناعي');
+  assert.deepEqual([trends[0].events, trends[0].sources], [3, 4]);
+  assert.equal(trends[0].items[0].id, 1, 'stories carried by more sources come first');
+  // adjectives alone are not topics
+  assert.equal(computeTrends([ev(1, 'الرئيس الفرنسي يزور', ['a']), ev(2, 'الوزير الفرنسي يقول', ['b']), ev(3, 'البرلمان الفرنسي يصوت', ['c'])]).length, 0);
+});
+
+test('world field sections and the Middle East split receive matching stories', () => {
+  // one passing word is not a topic story
+  assert.notEqual(classify({ title: 'مقتل 10 بانفجار في سيارة إسعاف', summary: '' }).section, 'w_auto');
+  for (const s of SECTIONS) assert.ok(['saudi', 'world', 'fields'].includes(s.group), s.key);
+  const cases = [
+    ['w_ai', 'أوبن إيه آي تطلق نموذجًا جديدًا من شات جي بي تي', 'قالت الشركة إن نموذج الذكاء الاصطناعي الجديد أسرع في البرمجة.'],
+    ['w_tech', 'أبل تكشف عن هاتف آيفون جديد بكاميرا محسنة', 'يأتي الهاتف بمعالج جديد ونظام تشغيل محدث.'],
+    ['w_cyber', 'هجوم فدية يعطل أنظمة مستشفيات في أوروبا', 'قال خبراء إن القراصنة استغلوا ثغرة في برمجيات قديمة.'],
+    ['w_crypto', 'البيتكوين يتجاوز 120 ألف دولار لأول مرة', 'ارتفعت العملات المشفرة مع تدفقات إلى صناديق البيتكوين.'],
+    ['w_startups', 'شركة ناشئة تجمع 50 مليون دولار في جولة تمويلية', 'قادت الجولة صناديق رأس المال الجريء.'],
+    ['w_science', 'ناسا تؤجل إطلاق مهمة إلى المريخ', 'قالت وكالة الفضاء إن المركبة الفضائية تحتاج اختبارات إضافية.'],
+    ['w_health', 'دراسة: دواء جديد يبطئ مرض الزهايمر', 'قال الأطباء إن العلاج أظهر نتائج مشجعة لدى المرضى.'],
+    ['w_climate', 'فيضانات وحرائق غابات مع تفاقم التغير المناخي', 'حذر تقرير من ارتفاع الانبعاثات وموجات الحر.'],
+    ['w_auto', 'تسلا تخفض أسعار سياراتها الكهربائية في أوروبا', 'تواجه الشركة منافسة من بي واي دي في سوق السيارات.'],
+    ['w_entertainment', 'فيلم جديد يتصدر شباك التذاكر في هوليوود', 'حقق الفيلم إيرادات قياسية وأشاد النقاد بأداء الممثلة.'],
+    ['w_mideast', 'الرئيس اللبناني يبحث مع وفد أممي الوضع في الجنوب', 'ناقش الجانبان تطورات الحرب والهدنة في لبنان.'],
+    ['w_politics', 'الرئيس الفرنسي يدعو إلى انتخابات برلمانية مبكرة', 'قالت الحكومة إن البرلمان سيحل الأسبوع المقبل.'],
+  ];
+  for (const [section, title, summary] of cases) {
+    const c = classify({ title, summary });
+    assert.equal(c.scope, 'world', title);
     assert.equal(c.section, section, title);
   }
 });

@@ -64,23 +64,32 @@ test('summarization service failure falls back to explicit limited mode without 
   }
 });
 
-test('sports content is excluded; purely financial sports-business news is kept as economy', () => {
-  assert.equal(sportsCheck({ title: 'الهلال يفوز على النصر في دوري روشن', summary: 'حقق الهلال فوزًا مثيرًا في المباراة.' }).excluded, true);
-  assert.equal(sportsCheck({ title: 'انتقال اللاعب إلى النادي بصفقة 100 مليون ريال', summary: 'وقع اللاعب عقدًا مع النادي في سوق الانتقالات.' }).excluded, true);
-  assert.equal(sportsCheck({ title: 'Real Madrid beat Barcelona in La Liga', summary: 'The striker scored twice in the football match.' }).excluded, true);
+test('sports news goes to the sports sections; purely financial sports-business news is kept as economy', () => {
+  assert.equal(sportsCheck({ title: 'الهلال يفوز على النصر في دوري روشن', summary: 'حقق الهلال فوزًا مثيرًا في المباراة.' }).sports, true);
+  assert.equal(sportsCheck({ title: 'انتقال اللاعب إلى النادي بصفقة 100 مليون ريال', summary: 'وقع اللاعب عقدًا مع النادي في سوق الانتقالات.' }).sports, true);
+  assert.equal(sportsCheck({ title: 'Real Madrid beat Barcelona in La Liga', summary: 'The striker scored twice in the football match.' }).sports, true);
+  const saudi = classify({ title: 'الهلال يفوز على النصر في دوري روشن', summary: 'حقق الهلال فوزًا مثيرًا في المباراة.' });
+  assert.equal(saudi.excluded, false);
+  assert.deepEqual([saudi.scope, saudi.section], ['saudi', 'sa_sports']);
+  const world = classify({ title: 'ريال مدريد يفوز على برشلونة في الدوري الإسباني', summary: 'سجل المهاجم هدفين في المباراة.' });
+  assert.deepEqual([world.scope, world.section], ['world', 'w_sports']);
+  // a sports feed with no categories: the source hint is enough
+  const hinted = classify({ title: 'قرعة كأس كاراباو.. السيتي يواجه برادفورد', summary: '', source: { default_scope: 'auto', section_hint: 'w_sports' } });
+  assert.equal(hinted.section, 'w_sports');
   const biz = sportsCheck({ title: 'صندوق الاستثمارات العامة يستحوذ على حصة في نادي الهلال ضمن مشروع الخصخصة', summary: 'تشمل الصفقة استثمارات بقيمة مليار ريال وطرح حصص للاستثمار في النادي.' });
-  assert.equal(biz.excluded, false);
+  assert.equal(biz.sports, false);
   assert.equal(biz.sportsFinance, true);
   const c = classify({ title: 'صندوق الاستثمارات العامة يستحوذ على حصة في نادي الهلال ضمن مشروع الخصخصة', summary: 'تشمل الصفقة استثمارات بقيمة مليار ريال وطرح حصص للاستثمار في النادي السعودي.' });
   assert.equal(c.section, 'sa_economy');
   // "الهلال الأحمر" (Red Crescent) is not sports
-  assert.equal(sportsCheck({ title: 'الهلال الأحمر يباشر حادثًا مروريًا في الرياض', summary: 'باشرت فرق الهلال الأحمر السعودي الحادث.' }).excluded, false);
-  // the excluded item is stored for audit but never becomes an event
+  assert.equal(sportsCheck({ title: 'الهلال الأحمر يباشر حادثًا مروريًا في الرياض', summary: 'باشرت فرق الهلال الأحمر السعودي الحادث.' }).sports, false);
+  // lifestyle pages are still left out
+  assert.equal(classify({ title: 'نصائح لتنسيق الأزياء في الشتاء', summary: '', categories: ['لايف ستايل'] }).excluded, true);
   const db = freshDb();
   const a = addSource(db, 'a');
   const r = processItem(db, a, { title: 'الهلال يفوز على النصر في دوري روشن', summary: 'حقق الهلال فوزًا في المباراة.', link: 'https://a.test/s/1', publishedAt: NOW }, { now: NOW });
-  assert.equal(r.excluded, true);
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM events').get().n, 0);
+  assert.notEqual(r.excluded, true);
+  assert.equal(db.prepare("SELECT section FROM events").get().section, 'sa_sports');
 });
 
 test('Arabic search with spelling variants, filters, and retrieval of old bulletins', () => {
