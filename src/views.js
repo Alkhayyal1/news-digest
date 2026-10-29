@@ -4,6 +4,7 @@ import { getSetting, J } from './db.js';
 import { scheduleStatus, lockInfo } from './runner.js';
 import { getBulletin, eventSnapshot } from './bulletin.js';
 import { aiAvailable } from './ai.js';
+import { computeTrends } from './core/trends.js';
 
 export function publicSources(db) {
   return db.prepare('SELECT id, key, name, url, type, language, is_official, enabled, notes, last_fetch_at, last_success_at, last_error, consecutive_failures FROM sources ORDER BY enabled DESC, is_official DESC, id').all()
@@ -42,9 +43,21 @@ export function eventDetail(db, id) {
 }
 
 export function latestBulletin(db) {
-  const b = db.prepare("SELECT id FROM bulletins WHERE status = 'published' ORDER BY created_at DESC LIMIT 1").get();
+  const b = db.prepare("SELECT id, created_at FROM bulletins WHERE status = 'published' ORDER BY created_at DESC LIMIT 1").get();
   const newerEmpty = b ? db.prepare("SELECT id, created_at, note FROM bulletins WHERE status = 'empty' AND created_at > (SELECT created_at FROM bulletins WHERE id = ?) ORDER BY created_at DESC LIMIT 1").get(b.id) : null;
-  return { bulletin: b ? getBulletin(db, b.id) : null, newerEmpty: newerEmpty || null };
+  return { bulletin: b ? getBulletin(db, b.id) : null, newerEmpty: newerEmpty || null, trends: b ? worldTrends(db, b.created_at) : [] };
+}
+
+// Global topics of the 24 hours before the bulletin (world news and fields; Saudi news has its own tab).
+export function worldTrends(db, at) {
+  const rows = db.prepare(`SELECT e.id, e.title, e.section, GROUP_CONCAT(DISTINCT i.source_id) AS srcs, GROUP_CONCAT(i.title, ' ||| ') AS titles
+      FROM events e JOIN items i ON i.event_id = e.id AND i.excluded = 0
+      WHERE e.hidden = 0 AND e.merged_into IS NULL AND e.scope = 'world' AND e.last_update_at > ? AND e.first_seen_at <= ?
+      GROUP BY e.id`).all(at - 24 * 3600_000, at);
+  return computeTrends(rows.map((r) => {
+    const sources = String(r.srcs || '').split(',').filter(Boolean);
+    return { id: r.id, title: r.title, section: r.section, n: sources.length, sources, texts: [r.title, ...String(r.titles || '').split(' ||| ')] };
+  }));
 }
 
 export const BULLETINS_PER_PAGE = 30;
