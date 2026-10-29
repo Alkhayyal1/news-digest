@@ -7,6 +7,14 @@
   <meta name="description" content="نشرات أخبار سعودية وعالمية من مصادر موثوقة، تصدر مرتين يوميًا">
   <meta name="theme-color" content="#0a6b4d">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <!-- installable on phones (home-screen app) -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="نشرة الموثوق">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
