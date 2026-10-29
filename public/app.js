@@ -201,7 +201,8 @@ function wireJumps() {
 async function pageHome() {
   setNav('home');
   app.innerHTML = '<div id="status"></div><div id="body"><p class="sub">جارٍ التحميل…</p></div>';
-  renderStatus(document.getElementById('status'));
+  // awaited at the end so the status strip's height is in place before the reading place is restored
+  const statusDone = renderStatus(document.getElementById('status'));
   const { bulletin, newerEmpty } = await api('/api/bulletins/latest');
   const body = document.getElementById('body');
   if (!bulletin) {
@@ -213,6 +214,7 @@ async function pageHome() {
     ${bulletin.note ? `<div class="notice warn">${esc(bulletin.note)}</div>` : ''}
     ${renderBulletinBody(bulletin)}`;
   wireJumps();
+  await statusDone;
 }
 
 async function pageBulletin(id) {
@@ -339,10 +341,33 @@ async function route() {
     else if (parts[0] === 'search') await pageSearch(params);
     else if (parts[0] === 'sources') await pageSources();
     else app.innerHTML = '<p>الصفحة غير موجودة.</p>';
-    window.scrollTo(0, 0);
+    restoreReadingPlace();
   } catch (e) {
     app.innerHTML = `<div class="notice danger">حدث خطأ: ${esc(e.message)}</div>`;
   }
 }
+
+// ---------- reading place ----------
+// Each history entry remembers how far the reader scrolled and which "more" sections were open,
+// so going back from a news item returns to the same spot instead of the top of the bulletin.
+// A newly opened page has no saved place and starts at the top.
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+function saveReadingPlace() {
+  const open = [...app.querySelectorAll('details')].flatMap((d, i) => (d.open ? [i] : []));
+  history.replaceState({ ...(history.state || {}), y: window.scrollY, open }, '');
+}
+function restoreReadingPlace() {
+  const s = history.state;
+  if (!s || s.y == null) return window.scrollTo(0, 0);
+  const all = app.querySelectorAll('details');
+  for (const i of s.open || []) if (all[i]) all[i].open = true;
+  window.scrollTo(0, s.y);
+}
+let saveTimer;
+window.addEventListener('scroll', () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveReadingPlace, 150); }, { passive: true });
+app.addEventListener('toggle', () => saveReadingPlace(), true);
+// save right before leaving the page through a link (the scroll timer may not have fired yet)
+document.addEventListener('click', (e) => { if (e.target.closest?.('a[href^="#/"]')) { clearTimeout(saveTimer); saveReadingPlace(); } }, true);
+
 window.addEventListener('hashchange', route);
 route();
