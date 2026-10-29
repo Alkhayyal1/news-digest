@@ -119,6 +119,12 @@ test('switching to fixed daily times (07:00 and 19:00 Riyadh) causes no off-sche
   let clock = ANCHOR + 60_000;
   const fetchImpl = fakeFetch(() => feedFor(clock));
   await tick(db, { now: () => clock, fetchImpl });
+  // old 7-hour grid also ran slots 1 and 2: their bulletins must not block the new grid's slots
+  for (const k of [1, 2]) {
+    clock = ANCHOR + k * 7 * H + 60_000;
+    assert.equal((await tick(db, { now: () => clock, fetchImpl })).action, 'ran');
+  }
+  const bulletins = () => db.prepare("SELECT COUNT(*) n FROM bulletins WHERE status = 'published'").get().n;
   const saved = { anchor: config.scheduleAnchor, hours: config.intervalHours };
   config.scheduleAnchor = '2026-10-28T07:00:00+03:00';
   config.intervalHours = 12;
@@ -126,12 +132,15 @@ test('switching to fixed daily times (07:00 and 19:00 Riyadh) causes no off-sche
     clock = Date.parse('2026-10-28T16:00:00+03:00');
     assert.equal((await tick(db, { now: () => clock, fetchImpl })).action, 'idle', 'the switch itself does not run an update');
     assert.equal(getAnchor(db, clock), Date.parse('2026-10-28T07:00:00+03:00'));
+    const before = bulletins();
     clock = Date.parse('2026-10-28T19:01:00+03:00');
     assert.equal((await tick(db, { now: () => clock, fetchImpl })).action, 'ran', '19:00 bulletin');
+    assert.equal(bulletins(), before + 1, 'the 19:00 run publishes a new bulletin');
     clock = Date.parse('2026-10-29T06:59:00+03:00');
     assert.equal((await tick(db, { now: () => clock, fetchImpl })).action, 'idle');
     clock = Date.parse('2026-10-29T07:02:00+03:00');
     assert.equal((await tick(db, { now: () => clock, fetchImpl })).action, 'ran', '07:00 bulletin');
+    assert.equal(bulletins(), before + 2, 'the 07:00 run publishes a new bulletin');
   } finally {
     config.scheduleAnchor = saved.anchor;
     config.intervalHours = saved.hours;
