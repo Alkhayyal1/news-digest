@@ -57,57 +57,72 @@ export function extractEntities(text) {
   return out.slice(0, 20);
 }
 
-// Decide whether an item is sports content that must be excluded.
-// Purely financial/development stories about sports entities are kept (and classified as economy).
-export function sportsCheck({ title, summary, categories = [], sourcePrefix = '' }) {
+// Decide whether an item is sports content (it goes to the sports sections).
+// Purely financial/development stories about sports entities are economy/business news instead.
+// `hinted`: the source itself is a sports feed.
+export function sportsCheck({ title, summary, categories = [], sourcePrefix = '', hinted = false }) {
   const norm = normalizeArabic(`${title} ${summary}`);
   const cats = normalizeArabic(`${categories.join(' ')} ${sourcePrefix}`);
-  const sportsCategory = /(^| )(رياضه|رياضي|الرياضه|sport|sports|football|كره)( |$)/.test(cats);
+  const sportsCategory = hinted || /(^| )(رياضه|رياضي|الرياضه|sport|sports|football|كره)( |$)/.test(cats);
   const sports = new Set(hits(norm, 'sports_hard'));
   const transfer = hits(norm, 'transfer').length > 0;
   const finance = new Set(hits(norm, 'finance'));
   const sportsScore = sports.size + (sportsCategory ? 2 : 0);
-  if (sportsScore < 2) return { excluded: false, sportsFinance: false, reason: '' };
-  // Transfers, results and player news are always excluded even if they mention money.
-  if (transfer) return { excluded: true, sportsFinance: false, reason: 'انتقالات/لاعبين' };
-  if (finance.size >= 2 && finance.size >= sports.size - 1) return { excluded: false, sportsFinance: true, reason: 'اقتصادي مرتبط بالرياضة' };
-  return { excluded: true, sportsFinance: false, reason: 'محتوى رياضي' };
+  if (sportsScore < 2) return { sports: false, sportsFinance: false };
+  // Transfers, results and player news are sports news even if they mention money.
+  if (transfer) return { sports: true, sportsFinance: false };
+  if (finance.size >= 2 && finance.size >= sports.size - 1) return { sports: false, sportsFinance: true };
+  return { sports: true, sportsFinance: false };
 }
 
 // Feed/section categories published by the source itself are a strong, cheap signal.
 const CATEGORY_HINTS = [
   [/(^| )(اقتصاد|الاقتصاد|اقتصادي|مال واعمال|اعمال|economy|business|markets?)( |$)/, { saudi: 'sa_economy', world: 'w_economy' }],
   [/(^| )(تقنيه|التقنيه|تكنولوجيا|علوم وتكنولوجيا|technology|tech)( |$)/, { world: 'w_tech' }],
-  [/(^| )(صحه|الصحه|علوم|science|health)( |$)/, { world: 'w_science' }],
+  [/(^| )(صحه|الصحه|health)( |$)/, { world: 'w_health' }],
+  [/(^| )(علوم|science)( |$)/, { world: 'w_science' }],
   [/(^| )(طاقه|الطاقه|نفط|energy)( |$)/, { world: 'w_energy' }],
   [/(^| )(سياسه|السياسه|politics)( |$)/, { saudi: 'sa_politics', world: 'w_politics' }],
-  [/(^| )(ثقافه|ثقافي|الثقافه|فنون|ثقافه وفن)( |$)/, { saudi: 'sa_culture' }],
-  [/(^| )(بيئي|بيئه|البيئه|طقس)( |$)/, { saudi: 'sa_climate' }],
+  [/(^| )(ثقافه|ثقافي|الثقافه|فنون|ثقافه وفن|فن|منوعات|ترفيه|يوميات الشرق|مشاهير|entertainment|celebrity)( |$)/, { saudi: 'sa_culture', world: 'w_entertainment' }],
+  [/(^| )(بيئي|بيئه|البيئه|طقس|مناخ|climate)( |$)/, { saudi: 'sa_climate', world: 'w_climate' }],
+  [/(^| )(سيارات|autos?)( |$)/, { world: 'w_auto' }],
   [/(^| )(تعليم|التعليم|تعليمي)( |$)/, { saudi: 'sa_education' }],
   [/(^| )(سياحه|سياحي|سفر|طيران)( |$)/, { saudi: 'sa_travel' }],
   [/(^| )(زراعه|زراعي)( |$)/, { saudi: 'sa_food' }],
 ];
-// Non-news sections (lifestyle, celebrities, society pages) are left out of bulletins.
-const SOFT_CATEGORIES = /(^| )(منوعات|يوميات الشرق|مشاهير|الناس|المراه|لايف ستايل|lifestyle|entertainment|celebrity)( |$)/;
+// Lifestyle/society pages are not news and are left out of bulletins.
+const SOFT_CATEGORIES = /(^| )(الناس|المراه|لايف ستايل|lifestyle)( |$)/;
+const SPORTS_SECTIONS = new Set(['sa_sports', 'w_sports']);
+const FIELD_KEYS = new Set(SECTIONS.filter((s) => s.group === 'fields').map((s) => s.key));
+// Topic evidence: forms of one word count once ("الصحه" + "صحه"), a specific phrase counts double.
+function fieldWeight(found) {
+  return found.filter((t) => !found.some((o) => o !== t && o.includes(t))).reduce((n, t) => n + (t.includes(' ') ? 2 : 1), 0);
+}
+const LIGHT_SECTIONS = new Set(['sa_sports', 'w_sports', 'w_entertainment']);
 
 export function classify({ title, summary = '', categories = [], source = {}, sourcePrefix = '' }) {
   const text = `${title} ${summary}`;
   const norm = normalizeArabic(text);
-  const sport = sportsCheck({ title, summary, categories, sourcePrefix });
+  const sport = sportsCheck({ title, summary, categories, sourcePrefix, hinted: SPORTS_SECTIONS.has(source.section_hint) });
   const catNorm = normalizeArabic(categories.join(' | '));
-  if (!sport.excluded && SOFT_CATEGORIES.test(catNorm)) Object.assign(sport, { excluded: true, reason: 'منوعات (ليست خبرًا)' });
+  const excluded = !sport.sports && SOFT_CATEGORIES.test(catNorm);
   const entities = extractEntities(text);
 
   const saudiHits = hits(norm, 'saudi').length + entities.filter((e) => e.kind === 'company').length;
   let scope = source.default_scope || null;
   if (!scope || scope === 'auto') scope = saudiHits >= 1 ? 'saudi' : 'world';
   // A Saudi source covering foreign news stays "world" unless the text is about the Kingdom.
-  if (source.default_scope === 'saudi' && saudiHits === 0 && hits(norm, 'w_politics').length + hits(norm, 'w_economy').length + hits(norm, 'w_tech').length + hits(norm, 'w_science').length + hits(norm, 'w_energy').length >= 2) scope = 'world';
+  if (source.default_scope === 'saudi' && saudiHits === 0 && ['w_politics', 'w_economy', 'w_tech', 'w_ai', 'w_science', 'w_health', 'w_energy'].reduce((n, k) => n + hits(norm, k).length, 0) >= 2) scope = 'world';
+  // Sports: Saudi league, clubs and national team are Saudi news wherever they are published.
+  if (sport.sports) scope = saudiHits + hits(norm, 'saudi_sports').length > 0 ? 'saudi' : 'world';
 
   const keys = SECTIONS.filter((s) => s.scope === scope).map((s) => s.key);
-  const score = Object.fromEntries(keys.map((k) => [k, hits(norm, k).length]));
+  const score = Object.fromEntries(keys.map((k) => [k, FIELD_KEYS.has(k) ? fieldWeight(hits(norm, k)) : hits(norm, k).length]));
   if (source.section_hint && score[source.section_hint] !== undefined) score[source.section_hint] += 1.5;
   for (const [re, map] of CATEGORY_HINTS) if (re.test(catNorm) && map[scope] && score[map[scope]] !== undefined) score[map[scope]] += 1.5;
+  // A topic section needs real evidence: one passing word ("سيارة إسعاف", "حرائق") is not a car or climate story.
+  // A feed dedicated to that topic is evidence enough.
+  for (const k of FIELD_KEYS) if (score[k] !== undefined && score[k] < 2 && source.section_hint !== k) score[k] = 0;
   if (scope === 'saudi') {
     if (sport.sportsFinance) score.sa_economy += 3;
   } else if (sport.sportsFinance) {
@@ -122,7 +137,10 @@ export function classify({ title, summary = '', categories = [], source = {}, so
       section = k;
     }
   }
-  const secondary = keys.filter((k) => k !== section && score[k] >= 2 && score[k] >= best * 0.6);
+  if (sport.sports) section = scope === 'saudi' ? 'sa_sports' : 'w_sports';
+  // World politics is split by region so the regional news readers follow most is not buried.
+  if (section === 'w_politics' && hits(norm, 'mideast').length) section = 'w_mideast';
+  const secondary = sport.sports ? [] : keys.filter((k) => k !== section && score[k] >= 2 && score[k] >= best * 0.6);
 
   let contentType = 'news';
   if (hits(normalizeArabic(title), 'analysis').length || /\/(opinion|authors|articles\/authors|analysis|columns?)\//i.test(source.item_link || '')) contentType = 'analysis';
@@ -134,15 +152,17 @@ export function classify({ title, summary = '', categories = [], source = {}, so
   for (const k of secondary) tags.push(SECTIONS.find((s) => s.key === k).name);
   for (const e of entities.filter((x) => x.kind !== 'name').slice(0, 5)) tags.push(e.label);
 
+  const importanceBase = (source.is_official ? 2 : 0) + Math.min(2, breakingHits) + (scope === 'saudi' ? 1 : 0) + (best >= 3 ? 1 : 0);
   return {
-    excluded: sport.excluded,
-    excludeReason: sport.reason,
+    excluded,
+    excludeReason: excluded ? 'منوعات (ليست خبرًا)' : '',
     scope,
     section,
     secondary,
     contentType,
     entities,
     tags: [...new Set(tags)],
-    importanceBase: (source.is_official ? 2 : 0) + Math.min(2, breakingHits) + (scope === 'saudi' ? 1 : 0) + (best >= 3 ? 1 : 0),
+    // sports and entertainment have their own sections; they do not compete for "الأهم"
+    importanceBase: LIGHT_SECTIONS.has(section) ? Math.max(0, importanceBase - 1) : importanceBase,
   };
 }
