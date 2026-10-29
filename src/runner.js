@@ -48,7 +48,9 @@ export async function runUpdate(db, { kind = 'manual', slotIndex = null, planned
       status = 'failed'; // keep the last good bulletin; never publish an empty one on fetch failure
     } else {
       const note = ingest.sourcesFailed ? `تعذر الوصول إلى ${ingest.sourcesFailed} من ${ingest.sources} مصادر في هذا التحديث.` : null;
-      const key = slotKey || (slotIndex !== null ? `slot:${slotIndex}` : `${kind}:${runId}`);
+      // Keyed by the slot's planned time, not its index: indexes restart when the schedule's
+      // anchor changes, and an old "slot:1" bulletin must never swallow a new slot's bulletin.
+      const key = slotKey || (plannedAt != null ? `slot-at:${plannedAt}` : `${kind}:${runId}`);
       const b = buildBulletin(db, { slotKey: key, runId, now: now(), note });
       bulletin = b.bulletin;
       status = bulletin.status === 'empty' ? 'no_news' : ingest.sourcesFailed ? 'partial' : 'success';
